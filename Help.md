@@ -8,6 +8,7 @@
 在1.84版本中，如果任务栏窗的对齐方式为左对齐时，则任务栏窗口总是显示在右侧，因为显示在左侧时会和任务栏原来的按钮重叠。
 而程序检测任务栏对齐方式是通过读取注册表`\HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced`下`TaskbarAl`的键值来获取的，但是如果你从来没有更改过任务栏的对齐设置，这个键值就不存在，此时TrafficMonitor会误以为任务栏是左对齐，这是一个bug。解决的办法是：
 在任务栏上点击鼠标右键，选择任务栏设置，更改一次任务栏对齐方式，生成以上键值后，比如将“居中”改为“左对齐”，再改回“居中”就好了。
+如果没有得到解决请检查是否存在TaskbarDa键值，没有的话请添加此键值。
 
 ### 如何显示CPU和内存利用率？
 
@@ -159,7 +160,7 @@ portable_mode = true
 
 由于温度监控功能在某些电脑中存在一些问题，因此温度监控功能默认是关闭的，如果你要使用TrafficMonitor的温度监控功能，请到[“选项设置”-“常规设置”-“硬件监控”](https://github.com/zhongyang219/TrafficMonitor/wiki/选项设置#硬件监控)中开启。开启后，任务栏右键菜单中的“显示设置”子菜单下才会出现温度相关的项目。
 
-TrafficMonitor的温度监控功能依赖第三方开源库[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)。如果你遇到硬件温度无法显示，或者显示的温度异常的问题，请先下载LibreHardwareMonitor，并查看LibreHardwareMonitor是否能正常显示对应的温度。
+TrafficMonitor的温度监控功能依赖第三方开源库[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor)。如果你遇到硬件温度无法显示，或者显示的温度异常的问题，请先下载LibreHardwareMonitor，并查看LibreHardwareMonitor是否能正常显示对应的温度。如果下载的最新版LibreHardwareMonitor可以正常监控到硬件温度，则将下载的LibreHardwareMonitor文件夹中的LibreHardwareMonitorLib.dll替换掉TrafficMonitor文件夹下的LibreHardwareMonitorLib.dll文件，即可解决温度无法检测的问题。
 
 请不要向我反馈诸如温度显示不准确、显卡利用率不准确之类的问题，此类问题我无法解决。TrafficMonitor不是专业的硬件监控软件，无法保证硬件监控的数据在所有设备上的准确性。
 
