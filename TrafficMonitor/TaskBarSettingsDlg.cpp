@@ -10,6 +10,9 @@
 #include "DisplayTextSettingDlg.h"
 #include "SetItemOrderDlg.h"
 #include "WindowsSettingHelper.h"
+#include "TrafficMonitorDlg.h"
+#include "FileDialogEx.h"
+#include "Win11TaskbarSettingDlg.h"
 
 // CTaskBarSettingsDlg 对话框
 
@@ -89,7 +92,7 @@ void CTaskBarSettingsDlg::ApplyDefaultStyle(int index)
     theApp.m_taskbar_default_style.ApplyDefaultStyle(index, m_data);
     DrawStaticColor();
     ((CButton*)GetDlgItem(IDC_SPECIFY_EACH_ITEM_COLOR_CHECK))->SetCheck(m_data.specify_each_item_color);
-    m_background_transparent_chk.SetCheck(IsTaskbarTransparent());
+    m_background_transparent_chk.SetCheck(m_data.IsTaskbarTransparent());
 }
 
 void CTaskBarSettingsDlg::ModifyDefaultStyle(int index)
@@ -110,18 +113,12 @@ void CTaskBarSettingsDlg::EnableControl()
     EnableDlgCtrl(IDC_CM_GRAPH_PLOT_RADIO, m_data.show_status_bar || m_data.show_netspeed_figure);
     EnableDlgCtrl(IDC_NET_SPEED_FIGURE_MAX_VALUE_EDIT, m_data.show_netspeed_figure);
     EnableDlgCtrl(IDC_NET_SPEED_FIGURE_MAX_VALUE_UNIT_COMBO, m_data.show_netspeed_figure);
-    //EnableDlgCtrl(IDC_TASKBAR_WND_SNAP_CHECK, theApp.m_win_version.IsWindows11OrLater() && !m_data.tbar_wnd_on_left);
+    //Win11下，任务栏左对齐时禁用“任务栏窗口显示在任务栏左侧”的选项
+    EnableDlgCtrl(IDC_TASKBAR_WND_ON_LEFT_CHECK, !theApp.m_is_windows11_taskbar || CWindowsSettingHelper::IsTaskbarCenterAlign());
+    EnableDlgCtrl(IDC_ENABLE_COLOR_EMOJI_CHECK, !m_data.disable_d2d);
+    EnableDlgCtrl(IDC_WIN11_SETTINGS_BUTTON, theApp.m_is_windows11_taskbar);
 }
 
-void CTaskBarSettingsDlg::SetTaskabrTransparent(bool transparent)
-{
-    CTaskbarDefaultStyle::SetTaskabrTransparent(transparent, m_data);
-}
-
-bool CTaskBarSettingsDlg::IsTaskbarTransparent()
-{
-    return CTaskbarDefaultStyle::IsTaskbarTransparent(m_data);
-}
 
 void CTaskBarSettingsDlg::SetControlMouseWheelEnable(bool enable)
 {
@@ -131,6 +128,7 @@ void CTaskBarSettingsDlg::SetControlMouseWheelEnable(bool enable)
     m_font_size_edit.SetMouseWheelEnable(enable);
     m_memory_display_combo.SetMouseWheelEnable(enable);
     m_item_space_edit.SetMouseWheelEnable(enable);
+    m_vertical_margin_edit.SetMouseWheelEnable(enable);
     m_net_speed_figure_max_val_edit.SetMouseWheelEnable(enable);
     m_net_speed_figure_max_val_unit_combo.SetMouseWheelEnable(enable);
 }
@@ -152,6 +150,7 @@ void CTaskBarSettingsDlg::DoDataExchange(CDataExchange* pDX)
     DDX_Control(pDX, IDC_AUTO_SET_BACK_COLOR_CHECK, m_auto_set_back_color_chk);
     DDX_Control(pDX, IDC_MEMORY_DISPLAY_COMBO, m_memory_display_combo);
     DDX_Control(pDX, IDC_ITEM_SPACE_EDIT, m_item_space_edit);
+    DDX_Control(pDX, IDC_VERTICAL_MARGIN_EDIT, m_vertical_margin_edit);
     DDX_Control(pDX, IDC_NET_SPEED_FIGURE_MAX_VALUE_EDIT, m_net_speed_figure_max_val_edit);
     DDX_Control(pDX, IDC_NET_SPEED_FIGURE_MAX_VALUE_UNIT_COMBO, m_net_speed_figure_max_val_unit_combo);
 }
@@ -187,11 +186,16 @@ BEGIN_MESSAGE_MAP(CTaskBarSettingsDlg, CTabDlg)
     ON_CBN_SELCHANGE(IDC_MEMORY_DISPLAY_COMBO, &CTaskBarSettingsDlg::OnCbnSelchangeMemoryDisplayCombo)
     ON_BN_CLICKED(IDC_SHOW_DASHED_BOX, &CTaskBarSettingsDlg::OnBnClickedShowDashedBox)
     ON_BN_CLICKED(IDC_SET_ORDER_BUTTON, &CTaskBarSettingsDlg::OnBnClickedSetOrderButton)
-    ON_BN_CLICKED(IDC_TASKBAR_WND_SNAP_CHECK, &CTaskBarSettingsDlg::OnBnClickedTaskbarWndSnapCheck)
     ON_EN_CHANGE(IDC_ITEM_SPACE_EDIT, &CTaskBarSettingsDlg::OnEnChangeItemSpaceEdit)
+    ON_EN_CHANGE(IDC_VERTICAL_MARGIN_EDIT, &CTaskBarSettingsDlg::OnEnChangeVerticalMarginEdit)
     ON_BN_CLICKED(IDC_SHOW_NET_SPEED_FIGURE_CHECK, &CTaskBarSettingsDlg::OnBnClickedShowNetSpeedFigureCheck)
     ON_CBN_SELCHANGE(IDC_NET_SPEED_FIGURE_MAX_VALUE_UNIT_COMBO, &CTaskBarSettingsDlg::OnCbnSelchangeNetSpeedFigureMaxValueUnitCombo)
     ON_EN_CHANGE(IDC_NET_SPEED_FIGURE_MAX_VALUE_EDIT, &CTaskBarSettingsDlg::OnEnChangeNetSpeedFigureMaxValueEdit)
+    ON_BN_CLICKED(IDC_GDI_RADIO, &CTaskBarSettingsDlg::OnBnClickedGdiRadio)
+    ON_BN_CLICKED(IDC_D2D_RADIO, &CTaskBarSettingsDlg::OnBnClickedD2dRadio)
+    ON_BN_CLICKED(IDC_ENABLE_COLOR_EMOJI_CHECK, &CTaskBarSettingsDlg::OnBnClickedEnableColorEmojiCheck)
+    ON_CBN_SELCHANGE(IDC_DIGIT_NUMBER_COMBO, &CTaskBarSettingsDlg::OnCbnSelchangeDigitNumberCombo)
+    ON_BN_CLICKED(IDC_WIN11_SETTINGS_BUTTON, &CTaskBarSettingsDlg::OnBnClickedWin11SettingsButton)
 END_MESSAGE_MAP()
 
 
@@ -227,9 +231,6 @@ BOOL CTaskBarSettingsDlg::OnInitDialog()
     ((CButton*)GetDlgItem(IDC_SHOW_STATUS_BAR_CHECK))->SetCheck(m_data.show_status_bar);
     ((CButton*)GetDlgItem(IDC_SEPARATE_VALUE_UNIT_CHECK))->SetCheck(m_data.separate_value_unit_with_space);
     ((CButton*)GetDlgItem(IDC_SHOW_TOOL_TIP_CHK))->SetCheck(m_data.show_tool_tip);
-
-    EnableDlgCtrl(IDC_TASKBAR_WND_SNAP_CHECK, theApp.m_win_version.IsWindows11OrLater());
-    CheckDlgButton(IDC_TASKBAR_WND_SNAP_CHECK, m_data.tbar_wnd_snap);
 
     m_text_color_static.SetLinkCursor();
     m_back_color_static.SetLinkCursor();
@@ -268,7 +269,7 @@ BOOL CTaskBarSettingsDlg::OnInitDialog()
     }
     ((CButton*)GetDlgItem(IDC_HIDE_PERCENTAGE_CHECK))->SetCheck(m_data.hide_percent);
     ((CButton*)GetDlgItem(IDC_SPECIFY_EACH_ITEM_COLOR_CHECK))->SetCheck(m_data.specify_each_item_color);
-    m_background_transparent_chk.SetCheck(IsTaskbarTransparent());
+    m_background_transparent_chk.SetCheck(m_data.IsTaskbarTransparent());
     m_atuo_adapt_light_theme_chk.SetCheck(m_data.auto_adapt_light_theme);
     m_auto_set_back_color_chk.SetCheck(m_data.auto_set_background_color);
     m_auto_set_back_color_chk.EnableWindow(theApp.m_win_version.IsWindows8OrLater());
@@ -296,7 +297,6 @@ BOOL CTaskBarSettingsDlg::OnInitDialog()
     m_digit_number_combo.SetCurSel(m_data.digits_number - 3);
 
     SetDlgItemText(IDC_EXE_PATH_EDIT, m_data.double_click_exe.c_str());
-    EnableControl();
 
     //m_default_style_menu.LoadMenu(IDR_TASKBAR_STYLE_MENU);
 
@@ -307,6 +307,11 @@ BOOL CTaskBarSettingsDlg::OnInitDialog()
     CheckDlgButton(IDC_SHOW_DASHED_BOX, m_data.show_graph_dashed_box);
     m_item_space_edit.SetRange(0, 32);
     m_item_space_edit.SetValue(m_data.item_space);
+    CTaskBarDlg* taskbar_dlg{ CTrafficMonitorDlg::Instance()->GetTaskbarWindow() };
+    m_vertical_margin_edit.SetRange(-10, 10);
+    m_vertical_margin_edit.SetValue(m_data.vertical_margin);
+    if (taskbar_dlg != nullptr)
+        m_vertical_margin_edit.EnableWindow(taskbar_dlg->IsTasksbarOnTopOrBottom());
 
     //初始化内存显示方式下拉列表
     m_memory_display_combo.AddString(CCommon::LoadText(IDS_USAGE_PERCENTAGE));
@@ -335,6 +340,23 @@ BOOL CTaskBarSettingsDlg::OnInitDialog()
     }
     m_default_style_menu.AppendMenu(MF_SEPARATOR);
     m_default_style_menu.AppendMenu(MF_POPUP | MF_STRING, (UINT)m_modify_default_style_menu.m_hMenu, CCommon::LoadText(IDS_MODIFY_PRESET));
+
+    //设置是否禁用D2D
+    if (!CTaskBarDlgDrawCommonSupport::CheckSupport())
+    {
+        m_data.disable_d2d = true;
+        //不支持时禁用选项
+        EnableDlgCtrl(IDC_D2D_RADIO, false);
+    }
+
+    if (m_data.disable_d2d)
+        CheckDlgButton(IDC_GDI_RADIO, true);
+    else
+        CheckDlgButton(IDC_D2D_RADIO, true);
+
+    CheckDlgButton(IDC_ENABLE_COLOR_EMOJI_CHECK, m_data.enable_colorful_emoji);
+
+    EnableControl();
 
     return TRUE;  // return TRUE unless you set the focus to a control
                   // 异常: OCX 属性页应返回 FALSE
@@ -440,11 +462,8 @@ void CTaskBarSettingsDlg::OnOK()
     }
     GetDlgItemText(IDC_FONT_NAME_EDIT1, m_data.font.name);
 
-    //获取数据位数的设置
-    m_data.digits_number = m_digit_number_combo.GetCurSel() + 3;
-
     bool is_taskbar_transparent_checked = (m_background_transparent_chk.GetCheck() != 0);
-    SetTaskabrTransparent(is_taskbar_transparent_checked);
+    m_data.SetTaskabrTransparent(is_taskbar_transparent_checked);
 
     SaveColorSettingToDefaultStyle();
 
@@ -513,7 +532,7 @@ afx_msg LRESULT CTaskBarSettingsDlg::OnStaticClicked(WPARAM wParam, LPARAM lPara
         CMFCColorDialogEx colorDlg(m_data.back_color, 0, this);
         if (colorDlg.DoModal() == IDOK)
         {
-            bool background_transparent = IsTaskbarTransparent();
+            bool background_transparent = m_data.IsTaskbarTransparent();
             m_data.back_color = colorDlg.GetColor();
             if (m_data.back_color == m_data.text_colors.begin()->second.label)
                 MessageBox(CCommon::LoadText(IDS_SAME_BACK_TEXT_COLOR_WARNING), NULL, MB_ICONWARNING);
@@ -647,7 +666,7 @@ void CTaskBarSettingsDlg::OnBnClickedBrowseButton()
 {
     // TODO: 在此添加控件通知处理程序代码
     CString szFilter = CCommon::LoadText(IDS_EXE_FILTER);
-    CFileDialog fileDlg(TRUE, NULL, NULL, 0, szFilter, this);
+    CFileDialogEx fileDlg(TRUE, NULL, szFilter);
     if (IDOK == fileDlg.DoModal())
     {
         m_data.double_click_exe = fileDlg.GetPathName();
@@ -670,7 +689,7 @@ void CTaskBarSettingsDlg::OnBnClickedBackgroundTransparentCheck()
 {
     // TODO: 在此添加控件通知处理程序代码
     bool checked = (m_background_transparent_chk.GetCheck() != 0);
-    SetTaskabrTransparent(checked);
+    m_data.SetTaskabrTransparent(checked);
     m_style_modified = true;
 }
 
@@ -736,13 +755,6 @@ void CTaskBarSettingsDlg::OnBnClickedSetOrderButton()
 }
 
 
-void CTaskBarSettingsDlg::OnBnClickedTaskbarWndSnapCheck()
-{
-    // TODO: 在此添加控件通知处理程序代码
-    m_data.tbar_wnd_snap = (IsDlgButtonChecked(IDC_TASKBAR_WND_SNAP_CHECK) != 0);
-}
-
-
 void CTaskBarSettingsDlg::OnEnChangeItemSpaceEdit()
 {
     // TODO:  如果该控件是 RICHEDIT 控件，它将不
@@ -755,6 +767,11 @@ void CTaskBarSettingsDlg::OnEnChangeItemSpaceEdit()
     m_data.ValidItemSpace();
 }
 
+void CTaskBarSettingsDlg::OnEnChangeVerticalMarginEdit()
+{
+    m_data.vertical_margin = m_vertical_margin_edit.GetValue();
+    m_data.ValidVerticalMargin();
+}
 
 BOOL CTaskBarSettingsDlg::OnCommand(WPARAM wParam, LPARAM lParam)
 {
@@ -795,4 +812,38 @@ void CTaskBarSettingsDlg::OnCbnSelchangeNetSpeedFigureMaxValueUnitCombo()
 void CTaskBarSettingsDlg::OnEnChangeNetSpeedFigureMaxValueEdit()
 {
     m_data.netspeed_figure_max_value = m_net_speed_figure_max_val_edit.GetValue();
+}
+
+
+void CTaskBarSettingsDlg::OnBnClickedGdiRadio()
+{
+    m_data.disable_d2d = true;
+    EnableControl();
+}
+
+
+void CTaskBarSettingsDlg::OnBnClickedD2dRadio()
+{
+    m_data.disable_d2d = false;
+    EnableControl();
+}
+
+
+void CTaskBarSettingsDlg::OnBnClickedEnableColorEmojiCheck()
+{
+    m_data.enable_colorful_emoji = (IsDlgButtonChecked(IDC_ENABLE_COLOR_EMOJI_CHECK) != FALSE);
+}
+
+
+void CTaskBarSettingsDlg::OnCbnSelchangeDigitNumberCombo()
+{
+    //获取数据位数的设置
+    m_data.digits_number = m_digit_number_combo.GetCurSel() + 3;
+}
+
+
+void CTaskBarSettingsDlg::OnBnClickedWin11SettingsButton()
+{
+    CWin11TaskbarSettingDlg dlg(m_data);
+    dlg.DoModal();
 }

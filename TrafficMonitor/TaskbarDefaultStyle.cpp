@@ -18,18 +18,36 @@ void CTaskbarDefaultStyle::LoadConfig()
 	CIniHelper ini{ theApp.m_config_path };
 	for (int i = 0; i < TASKBAR_DEFAULT_STYLE_NUM; i++)
 	{
-        COLORREF default_text_color = (i == TASKBAR_DEFAULT_LIGHT_STYLE_INDEX ? RGB(0, 0, 0) : RGB(255, 255, 255));
-        COLORREF default_back_color = (i == TASKBAR_DEFAULT_LIGHT_STYLE_INDEX ? RGB(210, 210, 211) : 0);
-        COLORREF default_transparent_color = (i == TASKBAR_DEFAULT_LIGHT_STYLE_INDEX ? RGB(210, 210, 211) : 0);
-        COLORREF default_status_bar_color = (i == TASKBAR_DEFAULT_LIGHT_STYLE_INDEX ? RGB(165, 165, 165) : 0x005A5A5A);
+        COLORREF default_text_color = (TASKBAR_DEFAULT_LIGHT_STYLE(i) ? RGB(0, 0, 0) : RGB(255, 255, 255));
+        COLORREF default_back_color = (TASKBAR_DEFAULT_LIGHT_STYLE(i) ? RGB(210, 210, 211) : 0);
+        COLORREF default_transparent_color = (TASKBAR_DEFAULT_LIGHT_STYLE(i) ? RGB(210, 210, 211) : 0);
+        COLORREF default_status_bar_color = (TASKBAR_DEFAULT_LIGHT_STYLE(i) ? RGB(165, 165, 165) : 0x005A5A5A);
         wchar_t buff[64];
         swprintf_s(buff, L"default%d_", i + 1);
         wstring key_name = buff;
-        ini.LoadTaskbarWndColors(L"taskbar_default_style", (key_name + L"text_color").c_str(), m_default_style[i].text_colors, default_text_color);
+
+        bool specify_each_item_color_default = false;
+        //为预设2和预设3设置默认的文本颜色
+        if (i == 1)
+        {
+            const wchar_t* str_default_text_color = L"4574711,16777215,5107653,16777215,16632499,16777215,16494036,16777215,14601983,16777215,16760992,10221779,13425662,16777215,4574711,16777215,";
+            ini.LoadTaskbarWndColors(L"taskbar_default_style", (key_name + L"text_color").c_str(), m_default_style[i].text_colors, str_default_text_color);
+            specify_each_item_color_default = true;
+        }
+        else if (i == 2)
+        {
+            const wchar_t* str_default_text_color = L"31957,0,2533120,0,13857281,0,14354551,0,1145775,0,4328380,0,167504,0,31957,0,";
+            ini.LoadTaskbarWndColors(L"taskbar_default_style", (key_name + L"text_color").c_str(), m_default_style[i].text_colors, str_default_text_color);
+            specify_each_item_color_default = true;
+        }
+        else
+        {
+            ini.LoadTaskbarWndColors(L"taskbar_default_style", (key_name + L"text_color").c_str(), m_default_style[i].text_colors, default_text_color);
+        }
         m_default_style[i].back_color = ini.GetInt(L"taskbar_default_style", (key_name + L"back_color").c_str(), default_back_color);
         m_default_style[i].transparent_color = ini.GetInt(L"taskbar_default_style", (key_name + L"transparent_color").c_str(), default_transparent_color);
         m_default_style[i].status_bar_color = ini.GetInt(L"taskbar_default_style", (key_name + L"status_bar_color").c_str(), default_status_bar_color);
-        m_default_style[i].specify_each_item_color = ini.GetBool(L"taskbar_default_style", (key_name + L"specify_each_item_color").c_str(), false);
+        m_default_style[i].specify_each_item_color = ini.GetBool(L"taskbar_default_style", (key_name + L"specify_each_item_color").c_str(), specify_each_item_color_default);
 	}
 }
 
@@ -108,40 +126,6 @@ void CTaskbarDefaultStyle::ModifyDefaultStyle(int index, TaskBarSettingData & da
 	m_default_style[index].transparent_color = data.transparent_color;
 	m_default_style[index].status_bar_color = data.status_bar_color;
 	m_default_style[index].specify_each_item_color = data.specify_each_item_color;
-}
-
-bool CTaskbarDefaultStyle::IsTaskbarTransparent(const TaskBarSettingData& data)
-{
-	if (CWindowsSettingHelper::IsWindows10LightTheme() || theApp.m_win_version.IsWindows8Or8point1() || theApp.m_is_windows11_taskbar)
-		return (data.transparent_color == data.back_color);
-	else
-		return data.transparent_color == 0;
-}
-
-void CTaskbarDefaultStyle::SetTaskabrTransparent(bool transparent, TaskBarSettingData& data)
-{
-	if (transparent)
-	{
-		if (CWindowsSettingHelper::IsWindows10LightTheme() || theApp.m_win_version.IsWindows8Or8point1() || theApp.m_is_windows11_taskbar)
-		{
-			//浅色模式下要设置任务栏窗口透明，只需将透明色设置成和背景色一样即可
-			CCommon::TransparentColorConvert(data.back_color);
-			data.transparent_color = data.back_color;
-		}
-		else
-		{
-			//深色模式下，背景色透明将透明色设置成黑色
-			data.transparent_color = 0;
-		}
-	}
-	else
-	{
-		//要设置任务栏窗口不透明，只需将透明色设置成和背景色不一样即可
-		if (data.back_color != TASKBAR_TRANSPARENT_COLOR1)
-			data.transparent_color = TASKBAR_TRANSPARENT_COLOR1;
-		else
-			data.transparent_color = TASKBAR_TRANSPARENT_COLOR2;
-	}
 }
 
 bool CTaskbarDefaultStyle::IsTaskBarStyleDataValid(const TaskBarStyleData& data)

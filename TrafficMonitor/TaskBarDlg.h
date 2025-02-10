@@ -2,9 +2,12 @@
 #include "Common.h"
 #include "afxwin.h"
 #include "DrawCommon.h"
+#include "TaskBarDlgDrawCommon.h"
+#include "TrafficMonitor.h"
 #include "IniHelper.h"
 #include "CommonData.h"
 #include "TaskbarItemOrderHelper.h"
+#include "SupportedRenderEnums.h"
 #include <list>
 
 // CTaskBarDlg 对话框
@@ -24,9 +27,9 @@ public:
     CToolTipCtrl m_tool_tips;
 
     void ShowInfo(CDC* pDC); 	//将信息绘制到控件上
-    void TryDrawStatusBar(CDrawCommon& drawer, const CRect& rect_bar, int usage_percent); //绘制CPU/内存状态条
+    void TryDrawStatusBar(IDrawCommon& drawer, const CRect& rect_bar, int usage_percent); //绘制CPU/内存状态条
 
-    void TryDrawGraph(CDrawCommon& drawer, const CRect& value_rect, DisplayItem item_type);		// 绘制CPU/内存动态图
+    void TryDrawGraph(IDrawCommon& drawer, const CRect& value_rect, CommonDisplayItem item_type);		// 绘制CPU/内存动态图
 
     bool AdjustWindowPos();	//设置窗口在任务栏中的位置
     void ApplyWindowTransparentColor();
@@ -36,6 +39,8 @@ public:
     UINT GetDPI() const;
     void SetDPI(UINT dpi);
     UINT DPI(UINT pixel) const;
+    int DPI(int pixel) const;
+    LONG DPI(LONG pixel) const;
     void DPI(CRect& rect) const;
 
     static void DPIFromRect(const RECT& rect, UINT* out_dpi_x, UINT* out_dpi_y);
@@ -78,6 +83,7 @@ protected:
     HWND m_hBar;		//任务栏窗口二级容器的句柄
     HWND m_hMin;		//最小化窗口的句柄
     HWND m_hNotify;     //任务栏通知区域的句柄
+    HWND m_hStart;      //开始按钮的句柄
 
     CRect m_rcTaskbar;  //任务栏的矩形区域
     CRect m_rcNotify;   //任务栏通知区域的矩形区域
@@ -87,6 +93,17 @@ protected:
     CRect m_rect;		//当前窗口的矩形区域
     int m_window_width{};
     int m_window_height{};
+    CSupportedRenderEnums m_supported_render_enums{};
+    DefaultCLazyConstructableWithInitializer<
+        CTaskBarDlgDrawCommonWindowSupport,
+        CTaskBarDlgDrawCommonSupport&>
+        m_taskbar_draw_common_window_support{[]() -> std::tuple<CTaskBarDlgDrawCommonSupport&>
+                                             { return {theApp.m_d2d_taskbar_draw_common_support.Get()}; }}; //提供D2D1绘图支持
+    DefaultCLazyConstructableWithInitializer<
+        CD2D1DeviceContextWindowSupport,
+        CTaskBarDlgDrawCommonSupport&>
+        m_d2d1_device_context_support{[]() -> std::tuple<CTaskBarDlgDrawCommonSupport&>
+                                      { return {theApp.m_d2d_taskbar_draw_common_support.Get()}; }};
 
     //任务栏各个部分的宽度
     struct ItemWidth
@@ -124,8 +141,8 @@ protected:
     int m_min_bar_width;	//最小化窗口缩小宽度后的宽度
     int m_min_bar_height;	//最小化窗口缩小高度后的高度（用于任务栏在屏幕左侧或右侧时）
 
-    std::map<DisplayItem, std::list<int>> m_map_history_data;  //保存各项数据历史数据的链表，链表保存按照时间顺序，越靠近头部数据越新
-    std::map<DisplayItem, int> m_history_data_count;            //统计添加到历史数据链表的次数
+    std::map<CommonDisplayItem, std::list<int>> m_map_history_data;  //保存各项数据历史数据的链表，链表保存按照时间顺序，越靠近头部数据越新
+    std::map<CommonDisplayItem, int> m_history_data_count;            //统计添加到历史数据链表的次数
 
     int m_left_space{};			//最小化窗口和二级窗口窗口左侧的边距
     int m_top_space{};			//最小化窗口和二级窗口窗口顶部的边距（用于任务栏在屏幕左侧或右侧时）
@@ -144,7 +161,7 @@ protected:
     void CheckTaskbarOnTopOrBottom();		//检查任务栏是否在屏幕的顶部或底部，并将结果保存在m_taskbar_on_top_or_bottom中
     CString GetMouseTipsInfo();		//获取鼠标提示
 
-    void AddHisToList(DisplayItem item_type, int current_usage_percent);		//将当前利用率数值添加进链表
+    void AddHisToList(CommonDisplayItem item_type, int current_usage_percent);		//将当前利用率数值添加进链表
 
     int CalculateNetspeedPercent(unsigned __int64 net_speed);     //计算网速占网速占用图的最大值的百分比
 
@@ -157,7 +174,7 @@ protected:
     //  rect: 绘制矩形区域
     //  label_width: 标签区域的宽度
     //  vertical: 如果为true，则标签和数值上下显示
-    void DrawDisplayItem(CDrawCommon& drawer, DisplayItem type, CRect rect, int label_width, bool vertical = false);
+    void DrawDisplayItem(IDrawCommon& drawer, DisplayItem type, CRect rect, int label_width, bool vertical = false);
 
     //绘制任务栏窗口中的一个插件项目
    //  drawer: 绘图类的对象
@@ -165,11 +182,13 @@ protected:
    //  rect: 绘制矩形区域
    //  label_width: 标签区域的宽度
    //  vertical: 如果为true，则标签和数值上下显示
-    void DrawPluginItem(CDrawCommon& drawer, IPluginItem* item, CRect rect, int label_width, bool vertical = false);
+    void DrawPluginItem(IDrawCommon& drawer, IPluginItem* item, CRect rect, int label_width, bool vertical = false);
 
     void MoveWindow(CRect rect);
 
 public:
+    static void DisableRenderFeatureIfNecessary(CSupportedRenderEnums& ref_supported_render_enums);
+    static HWND GetShellTrayWndHandleAndSaveWindows11TaskBarExistenceInfoToTheApp() noexcept;
     void SetTextFont();
     void ApplySettings();
     void CalculateWindowSize();		//计算窗口每部分的大小，及各个部分的宽度。窗口大小保存到m_window_width和m_window_height中，各部分宽度保存到m_item_widths中
@@ -179,13 +198,19 @@ public:
 
     bool GetCannotInsertToTaskBar() const { return m_connot_insert_to_task_bar; }
     int GetErrorCode() const { return m_error_code; }
-    bool IsTasksbarOnTopOrBottom() { return m_taskbar_on_top_or_bottom; }
+    bool IsTasksbarOnTopOrBottom() const { return m_taskbar_on_top_or_bottom; }
 
     static bool IsItemShow(DisplayItem item);
     static bool IsShowCpuMemory();
     static bool IsShowNetSpeed();
 
     CommonDisplayItem GetClickedItem() const { return m_clicked_item; }
+
+    //是否允许“任务栏窗口靠近图标而不是任务栏的两侧”选项
+    //taskbar_wnd_on_left: 任务栏窗口是否在任务栏左侧
+    static bool IsTaskbarCloseToIconEnable(bool taskbar_wnd_on_left);
+
+    std::wstring GetTaskbarDebugString() const;
 
     DECLARE_MESSAGE_MAP()
 

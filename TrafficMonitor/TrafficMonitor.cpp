@@ -12,6 +12,10 @@
 #include "auto_start_helper.h"
 #include "AppAlreadyRuningDlg.h"
 #include "WindowsSettingHelper.h"
+#ifndef DISABLE_WINDOWS_WEB_EXPERIENCE_DETECTOR
+#include "winrt/base.h"
+#endif
+#include <gdiplus.h>
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -41,6 +45,10 @@ CTrafficMonitorApp::CTrafficMonitorApp()
     // TODO: 在此处添加构造代码，
     // 将所有重要的初始化放置在 InitInstance 中
     CRASHREPORT::StartCrashReport();
+#ifndef DISABLE_WINDOWS_WEB_EXPERIENCE_DETECTOR
+    if (m_win_version.IsWindows11OrLater())
+        winrt::init_apartment();
+#endif
 }
 
 void CTrafficMonitorApp::LoadConfig()
@@ -59,8 +67,14 @@ void CTrafficMonitorApp::LoadConfig()
     else
         is_chinese_language = (m_general_data.language == Language::SIMPLIFIED_CHINESE);
     m_general_data.update_source = ini.GetInt(L"general", L"update_source", is_chinese_language ? 1 : 0);   //如果当前语言为简体，则默认更新源为Gitee，否则为GitHub
-    //载入获取CPU利用率的方式，默认使用GetSystemTimes获取
-    m_general_data.m_get_cpu_usage_by_cpu_times = ini.GetBool(L"general", L"get_cpu_usage_by_cpu_times", /*m_win_version.GetMajorVersion() < 10*/ true);
+    //载入获取CPU利用率的方式，默认使用性能计数器获取
+    m_general_data.cpu_usage_acquire_method = static_cast<GeneralSettingData::CpuUsageAcquireMethod>(ini.GetInt(L"general", L"cpu_usage_acquire_method", GeneralSettingData::CA_PDH));
+    //Lite版获取CPU利用率的方式不能为“通过硬件监控”
+#ifdef WITHOUT_TEMPERATURE
+    if (m_general_data.cpu_usage_acquire_method == GeneralSettingData::CA_HARDWARE_MONITOR)
+        m_general_data.cpu_usage_acquire_method = GeneralSettingData::CA_CPU_TIME;
+#endif
+
     m_general_data.monitor_time_span = ini.GetInt(L"general", L"monitor_time_span", 1000);
     if (m_general_data.monitor_time_span < MONITOR_TIME_SPAN_MIN || m_general_data.monitor_time_span > MONITOR_TIME_SPAN_MAX)
         m_general_data.monitor_time_span = 1000;
@@ -101,6 +115,11 @@ void CTrafficMonitorApp::LoadConfig()
     m_cfg_data.m_skin_name = ini.GetString(_T("config"), _T("skin_selected"), _T(""));
     if (m_cfg_data.m_skin_name.substr(0, 8) == L".\\skins\\")       //如果读取到的皮肤名称前面有".\\skins\\"，则把它删除。（用于和前一个版本保持兼容性）
         m_cfg_data.m_skin_name = m_cfg_data.m_skin_name.substr(7);
+
+    m_cfg_data.skin_auto_adapt = ini.GetBool(L"skins", L"skin_auto_adapt", false);
+    m_cfg_data.skin_name_dark_mode = ini.GetString(L"skins", L"skin_name_dark_mode", L"");
+    m_cfg_data.skin_name_light_mode = ini.GetString(L"skins", L"skin_name_light_mode", L"");
+
     m_cfg_data.m_notify_icon_selected = ini.GetInt(_T("config"), _T("notify_icon_selected"), (m_win_version.IsWindows7() || m_win_version.IsWindows8Or8point1() ? 2 : m_cfg_data.m_dft_notify_icon));       //Win7/8/8.1默认使用蓝色通知区图标，因为隐藏通知区图标后白色图标会看不清，其他系统默认使用白色图标
     m_cfg_data.m_notify_icon_auto_adapt = ini.GetBool(_T("config"), _T("notify_icon_auto_adapt"), true);
     if (m_cfg_data.m_notify_icon_auto_adapt)
@@ -128,6 +147,7 @@ void CTrafficMonitorApp::LoadConfig()
     m_main_wnd_data.disp_str.Get(TDI_HDD_TEMP) = ini.GetString(L"config", L"hdd_temp_string", CCommon::LoadText(IDS_HDD_DISP, _T(": $")));
     m_main_wnd_data.disp_str.Get(TDI_MAIN_BOARD_TEMP) = ini.GetString(L"config", L"main_board_temp_string", CCommon::LoadText(IDS_MAINBOARD_DISP, _T(": $")));
     m_main_wnd_data.disp_str.Get(TDI_HDD_USAGE) = ini.GetString(L"config", L"hdd_string", CCommon::LoadText(IDS_HDD_DISP, _T(": $")));
+    m_main_wnd_data.disp_str.Get(TDI_TODAY_TRAFFIC) = ini.GetString(L"config", L"today_traffic_string", CCommon::LoadText(IDS_TRAFFIC_USED, _T(": $")));
 
     //载入插件项目的显示文本设置
     ini.LoadPluginDisplayStr(true);
@@ -158,11 +178,11 @@ void CTrafficMonitorApp::LoadConfig()
     m_general_data.hdd_temp_tip.tip_value = ini.GetInt(L"notify_tip", L"hdd_temperature_tip_value", 80);
     m_general_data.mainboard_temp_tip.enable = ini.GetBool(L"notify_tip", L"mainboard_temperature_tip_enable", false);
     m_general_data.mainboard_temp_tip.tip_value = ini.GetInt(L"notify_tip", L"mainboard_temperature_tip_value", 80);
- 
+
     //任务栏窗口设置
     m_taskbar_data.back_color = ini.GetInt(_T("task_bar"), _T("task_bar_back_color"), m_taskbar_data.dft_back_color);
     m_taskbar_data.transparent_color = ini.GetInt(_T("task_bar"), _T("transparent_color"), m_taskbar_data.dft_transparent_color);
-    if (CTaskbarDefaultStyle::IsTaskbarTransparent(m_taskbar_data)) //如果任务栏背景透明，则需要将颜色转换一下
+    if (m_taskbar_data.IsTaskbarTransparent()) //如果任务栏背景透明，则需要将颜色转换一下
     {
         CCommon::TransparentColorConvert(m_taskbar_data.back_color);
         CCommon::TransparentColorConvert(m_taskbar_data.transparent_color);
@@ -227,6 +247,7 @@ void CTrafficMonitorApp::LoadConfig()
     m_taskbar_data.disp_str.Get(TDI_MAIN_BOARD_TEMP) = ini.GetString(L"task_bar", L"main_board_temp_string", CCommon::LoadText(IDS_MAINBOARD_DISP, _T(": ")));
     m_taskbar_data.disp_str.Get(TDI_HDD_USAGE) = ini.GetString(L"task_bar", L"hdd_string", CCommon::LoadText(IDS_HDD_DISP, _T(": ")));
     m_taskbar_data.disp_str.Get(TDI_CPU_FREQ) = ini.GetString(L"task_bar", L"cpu_freq_string", CCommon::LoadText(IDS_CPU_FREQ, _T(": $")));
+    m_taskbar_data.disp_str.Get(TDI_TODAY_TRAFFIC) = ini.GetString(L"task_bar", L"today_traffic_string", CCommon::LoadText(IDS_TRAFFIC_USED, _T(": $")));
     ini.LoadPluginDisplayStr(false);
 
     m_taskbar_data.tbar_wnd_on_left = ini.GetBool(_T("task_bar"), _T("task_bar_wnd_on_left"), false);
@@ -248,7 +269,14 @@ void CTrafficMonitorApp::LoadConfig()
     m_taskbar_data.cm_graph_type = ini.GetBool(_T("task_bar"), _T("cm_graph_type"), true);
     m_taskbar_data.show_graph_dashed_box = ini.GetBool(L"task_bar", L"show_graph_dashed_box", false);
     m_taskbar_data.item_space = ini.GetInt(L"task_bar", L"item_space", 4);
+    m_taskbar_data.vertical_margin = ini.GetInt(L"task_bar", L"vertical_margin", 0);
+    m_taskbar_data.window_offset_top = ini.GetInt(L"task_bar", L"window_offset_top", 0);
+    m_taskbar_data.window_offset_left = ini.GetInt(L"task_bar", L"window_offset_left", 0);
     m_taskbar_data.ValidItemSpace();
+    m_taskbar_data.ValidWindowOffsetTop();
+    m_taskbar_data.ValidWindowOffsetLeft();
+    m_taskbar_data.avoid_overlap_with_widgets = ini.GetBool(_T("task_bar"), _T("avoid_overlap_with_widgets"), false);
+    m_taskbar_data.taskbar_left_space_win11 = ini.GetInt(L"task_bar", L"taskbar_left_space_win11", 160);
 
     if (m_win_version.IsWindows10OrLater())     //只有Win10才支持自动适应系统深色/浅色主题
         m_taskbar_data.auto_adapt_light_theme = ini.GetBool(L"task_bar", L"auto_adapt_light_theme", false);
@@ -271,6 +299,12 @@ void CTrafficMonitorApp::LoadConfig()
     m_taskbar_data.netspeed_figure_max_value = ini.GetInt(L"task_bar", L"netspeed_figure_max_value", 512);
     m_taskbar_data.netspeed_figure_max_value_unit = ini.GetInt(L"task_bar", L"netspeed_figure_max_value_unit", 0);
 
+    if (CTaskBarDlgDrawCommonSupport::CheckSupport())
+        m_taskbar_data.disable_d2d = ini.GetBool(L"task_bar", L"disable_d2d", true);
+    else
+        m_taskbar_data.disable_d2d = true;
+    m_taskbar_data.enable_colorful_emoji = ini.GetBool(L"task_bar", L"enable_colorful_emoji", true);
+
     //其他设置
     //m_cfg_data.m_show_internet_ip = ini.GetBool(L"connection_details", L"show_internet_ip", false);
     m_cfg_data.m_use_log_scale = ini.GetBool(_T("histroy_traffic"), _T("use_log_scale"), true);
@@ -286,8 +320,6 @@ void CTrafficMonitorApp::LoadConfig()
     m_last_light_mode = ini.GetBool(L"other", L"last_light_mode", CWindowsSettingHelper::IsWindows10LightTheme());
     m_show_mouse_panetrate_tip = ini.GetBool(L"other", L"show_mouse_panetrate_tip", true);
     m_show_dot_net_notinstalled_tip = ini.GetBool(L"other", L"show_dot_net_notinstalled_tip", true);
-
-    m_cfg_data.taskbar_left_space_win11 = ini.GetInt(L"task_bar", L"taskbar_left_space_win11", 160);
 }
 
 void CTrafficMonitorApp::SaveConfig()
@@ -300,7 +332,7 @@ void CTrafficMonitorApp::SaveConfig()
     ini.WriteBool(_T("general"), _T("allow_skin_cover_text"), m_general_data.allow_skin_cover_text);
     ini.WriteInt(_T("general"), _T("language"), static_cast<int>(m_general_data.language));
     ini.WriteBool(L"general", L"show_all_interface", m_general_data.show_all_interface);
-    ini.WriteBool(L"general", L"get_cpu_usage_by_cpu_times", m_general_data.m_get_cpu_usage_by_cpu_times);
+    ini.WriteInt(L"general", L"cpu_usage_acquire_method", m_general_data.cpu_usage_acquire_method);
     ini.WriteInt(L"general", L"monitor_time_span", m_general_data.monitor_time_span);
     ini.WriteString(L"general", L"hard_disk_name", m_general_data.hard_disk_name);
     ini.WriteString(L"general", L"cpu_core_name", m_general_data.cpu_core_name);
@@ -324,6 +356,11 @@ void CTrafficMonitorApp::SaveConfig()
     ini.WriteInt(L"config", L"hide_main_window", m_cfg_data.m_hide_main_window);
     ini.WriteString(L"connection", L"connection_name", CCommon::StrToUnicode(m_cfg_data.m_connection_name.c_str()));
     ini.WriteString(_T("config"), _T("skin_selected"), m_cfg_data.m_skin_name.c_str());
+
+    ini.WriteBool(L"skins", L"skin_auto_adapt", m_cfg_data.skin_auto_adapt);
+    ini.WriteString(L"skins", L"skin_name_dark_mode", m_cfg_data.skin_name_dark_mode);
+    ini.WriteString(L"skins", L"skin_name_light_mode", m_cfg_data.skin_name_light_mode);
+
     ini.WriteInt(L"config", L"notify_icon_selected", m_cfg_data.m_notify_icon_selected);
     ini.WriteBool(L"config", L"notify_icon_auto_adapt", m_cfg_data.m_notify_icon_auto_adapt);
 
@@ -344,6 +381,7 @@ void CTrafficMonitorApp::SaveConfig()
     ini.WriteString(_T("config"), _T("hdd_temp_string"), m_main_wnd_data.disp_str.Get(TDI_HDD_TEMP));
     ini.WriteString(_T("config"), _T("main_board_temp_string"), m_main_wnd_data.disp_str.Get(TDI_MAIN_BOARD_TEMP));
     ini.WriteString(_T("config"), _T("hdd_string"), m_main_wnd_data.disp_str.Get(TDI_HDD_USAGE));
+    ini.WriteString(_T("config"), _T("today_traffic_string"), m_main_wnd_data.disp_str.Get(TDI_TODAY_TRAFFIC));
     ini.SavePluginDisplayStr(true);
 
     ini.WriteBool(L"config", L"speed_short_mode", m_main_wnd_data.speed_short_mode);
@@ -396,6 +434,7 @@ void CTrafficMonitorApp::SaveConfig()
     ini.WriteString(_T("task_bar"), _T("hdd_temp_string"), m_taskbar_data.disp_str.Get(TDI_HDD_TEMP));
     ini.WriteString(_T("task_bar"), _T("main_board_temp_string"), m_taskbar_data.disp_str.Get(TDI_MAIN_BOARD_TEMP));
     ini.WriteString(_T("task_bar"), _T("hdd_string"), m_taskbar_data.disp_str.Get(TDI_HDD_USAGE));
+    ini.WriteString(_T("task_bar"), _T("today_traffic_string"), m_taskbar_data.disp_str.Get(TDI_TODAY_TRAFFIC));
     ini.SavePluginDisplayStr(false);
 
     ini.WriteBool(L"task_bar", L"task_bar_wnd_on_left", m_taskbar_data.tbar_wnd_on_left);
@@ -417,6 +456,11 @@ void CTrafficMonitorApp::SaveConfig()
     ini.WriteBool(L"task_bar", L"cm_graph_type", m_taskbar_data.cm_graph_type);
     ini.WriteBool(L"task_bar", L"show_graph_dashed_box", m_taskbar_data.show_graph_dashed_box);
     ini.WriteInt(L"task_bar", L"item_space", m_taskbar_data.item_space);
+    ini.WriteInt(L"task_bar", L"vertical_margin", m_taskbar_data.vertical_margin);
+    ini.WriteInt(L"task_bar", L"window_offset_top", m_taskbar_data.window_offset_top);
+    ini.WriteInt(L"task_bar", L"window_offset_left", m_taskbar_data.window_offset_left);
+    ini.WriteBool(L"task_bar", L"avoid_overlap_with_widgets", m_taskbar_data.avoid_overlap_with_widgets);
+    ini.WriteInt(L"task_bar", L"taskbar_left_space_win11", m_taskbar_data.taskbar_left_space_win11);
 
     ini.WriteBool(L"task_bar", L"auto_adapt_light_theme", m_taskbar_data.auto_adapt_light_theme);
     ini.WriteInt(L"task_bar", L"dark_default_style", m_taskbar_data.dark_default_style);
@@ -430,6 +474,9 @@ void CTrafficMonitorApp::SaveConfig()
     ini.WriteBool(L"task_bar", L"show_netspeed_figure", m_taskbar_data.show_netspeed_figure);
     ini.WriteInt(L"task_bar", L"netspeed_figure_max_value", m_taskbar_data.netspeed_figure_max_value);
     ini.WriteInt(L"task_bar", L"netspeed_figure_max_value_unit", m_taskbar_data.netspeed_figure_max_value_unit);
+
+    ini.WriteBool(L"task_bar", L"disable_d2d", m_taskbar_data.disable_d2d);
+    ini.WriteBool(L"task_bar", L"enable_colorful_emoji", m_taskbar_data.enable_colorful_emoji);
 
     //其他设置
     //ini.WriteBool(L"connection_details", L"show_internet_ip", m_cfg_data.m_show_internet_ip);
@@ -447,8 +494,6 @@ void CTrafficMonitorApp::SaveConfig()
     ini.WriteBool(_T("other"), _T("show_dot_net_notinstalled_tip"), m_show_dot_net_notinstalled_tip);
 
     ini.WriteString(L"config", L"plugin_disabled", m_cfg_data.plugin_disabled.ToString());
-
-    ini.WriteInt(L"task_bar", L"taskbar_left_space_win11", m_cfg_data.taskbar_left_space_win11);
 
     ini.WriteString(L"app", L"version", VERSION);
 
@@ -562,6 +607,8 @@ void CTrafficMonitorApp::CheckUpdate(bool message)
     version = update_helper.GetVersion();
 #ifdef _M_X64
     link = update_helper.GetLink64();
+#elif defined _M_ARM64EC
+    link = update_helper.GetLinkArm64ec();
 #else
     link = update_helper.GetLink();
 #endif
@@ -754,6 +801,8 @@ CString CTrafficMonitorApp::GetSystemInfoString()
     info += _T(" ");
 #ifdef _M_X64
     info += _T("x64");
+#elif defined _M_ARM64EC
+    info += _T("Arm64EC");
 #else
     info += _T("x86");
 #endif
@@ -782,7 +831,7 @@ void CTrafficMonitorApp::InitMenuResourse()
     m_main_menu_plugin_sub_menu.AppendMenu(MF_STRING | MF_ENABLED, ID_PLUGIN_OPTIONS, CCommon::LoadText(IDS_PLUGIN_OPTIONS, _T("...")));
     m_main_menu_plugin_sub_menu.AppendMenu(MF_STRING | MF_ENABLED, ID_PLUGIN_DETAIL, CCommon::LoadText(IDS_PLUGIN_INFO, _T("...")));
     CMenuIcon::AddIconToMenuItem(m_main_menu_plugin_sub_menu.GetSafeHmenu(), ID_PLUGIN_OPTIONS, FALSE, GetMenuIcon(IDI_SETTINGS));
-    CMenuIcon::AddIconToMenuItem(m_main_menu_plugin_sub_menu.GetSafeHmenu(), ID_PLUGIN_DETAIL, FALSE, GetMenuIcon(IDI_ITEM));
+    CMenuIcon::AddIconToMenuItem(m_main_menu_plugin_sub_menu.GetSafeHmenu(), ID_PLUGIN_DETAIL, FALSE, GetMenuIcon(IDI_INFO));
     CMenu* main_menu_plugin = m_main_menu_plugin.GetSubMenu(0);
     main_menu_plugin->AppendMenu(MF_SEPARATOR);
     main_menu_plugin->AppendMenu(MF_POPUP | MF_STRING, (UINT)m_main_menu_plugin_sub_menu.m_hMenu, _T("<plugin name>"));
@@ -791,7 +840,7 @@ void CTrafficMonitorApp::InitMenuResourse()
     m_taskbar_menu_plugin_sub_menu.AppendMenu(MF_STRING | MF_ENABLED, ID_PLUGIN_OPTIONS_TASKBAR, CCommon::LoadText(IDS_PLUGIN_OPTIONS, _T("...")));
     m_taskbar_menu_plugin_sub_menu.AppendMenu(MF_STRING | MF_ENABLED, ID_PLUGIN_DETAIL_TASKBAR, CCommon::LoadText(IDS_PLUGIN_INFO, _T("...")));
     CMenuIcon::AddIconToMenuItem(m_taskbar_menu_plugin_sub_menu.GetSafeHmenu(), ID_PLUGIN_OPTIONS_TASKBAR, FALSE, GetMenuIcon(IDI_SETTINGS));
-    CMenuIcon::AddIconToMenuItem(m_taskbar_menu_plugin_sub_menu.GetSafeHmenu(), ID_PLUGIN_DETAIL_TASKBAR, FALSE, GetMenuIcon(IDI_ITEM));
+    CMenuIcon::AddIconToMenuItem(m_taskbar_menu_plugin_sub_menu.GetSafeHmenu(), ID_PLUGIN_DETAIL_TASKBAR, FALSE, GetMenuIcon(IDI_INFO));
     CMenu* taskbar_menu_plugin = m_taskbar_menu_plugin.GetSubMenu(0);
     taskbar_menu_plugin->AppendMenu(MF_SEPARATOR);
     taskbar_menu_plugin->AppendMenu(MF_POPUP | MF_STRING, (UINT)m_taskbar_menu_plugin_sub_menu.m_hMenu, _T("<plugin name>"));
@@ -1085,6 +1134,10 @@ BOOL CTrafficMonitorApp::InitInstance()
     CTest::Test();
 #endif
 
+    //初始化GDI+
+    Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+    GdiplusStartup(&m_gdiplusToken, &gdiplusStartupInput, NULL);
+
     SendSettingsToPlugin();
 
     CTrafficMonitorDlg dlg;
@@ -1111,6 +1164,9 @@ BOOL CTrafficMonitorApp::InitInstance()
     {
         delete pShellManager;
     }
+
+    // 释放GDI+
+    Gdiplus::GdiplusShutdown(m_gdiplusToken);
 
 #ifndef _AFXDLL
     ControlBarCleanUp();
@@ -1254,18 +1310,18 @@ void CTrafficMonitorApp::SendSettingsToPlugin()
     }
 }
 
-void CTrafficMonitorApp::UpdatePluginMenu(CMenu* pMenu, ITMPlugin* plugin)
+void CTrafficMonitorApp::UpdatePluginMenu(CMenu* pMenu, ITMPlugin* plugin, int plugin_cmd_start_index)
 {
-    if (pMenu != nullptr && plugin != nullptr)
+    if (pMenu != nullptr)
     {
         //删除菜单已经存在的插件命令
-        while (pMenu->GetMenuItemCount() > 2)
+        while (pMenu->GetMenuItemCount() > plugin_cmd_start_index)
         {
             if (!pMenu->DeleteMenu(pMenu->GetMenuItemCount() - 1, MF_BYPOSITION))
                 break;
         }
         //添加插件命令
-        if (plugin->GetAPIVersion() >= 5)
+        if (plugin != nullptr && plugin->GetAPIVersion() >= 5)
         {
             int plugin_cmd_count = plugin->GetCommandCount();
             //添加分隔符

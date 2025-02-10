@@ -196,6 +196,48 @@
     <Filter Include="源文件和头文件\公共的类\DllFunctions">
       <UniqueIdentifier>{a106d99c-80bb-4625-a64e-9d1ea24cad7c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="源文件和头文件\公共的类\Nullable">
+      <UniqueIdentifier>{f51d70bc-ec1d-45e9-9c57-777da2b6e51d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\DrawTextManager">
+      <UniqueIdentifier>{af0ec00c-027f-4003-890e-7122d0b8df0c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\HResultException">
+      <UniqueIdentifier>{48a72bdd-aca1-4367-9907-4bbb92dea212}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\Image2DEffect">
+      <UniqueIdentifier>{b6684af7-c43e-42f7-9094-9315af53951d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\RenderAPISupport">
+      <UniqueIdentifier>{9e68f549-1373-437f-89f9-0b976150aa99}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\RenderAPISupport\D2D1Support">
+      <UniqueIdentifier>{9b93962c-26e9-41d5-a5e3-7dfd90bc5e96}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\RenderAPISupport\D3D10Support1">
+      <UniqueIdentifier>{f6a75faf-64b5-4f3b-a382-7dfd4a17d61c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\RenderAPISupport\DCompositionSupport">
+      <UniqueIdentifier>{9d71c24a-4df2-4df5-a536-741d890ada1b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\RenderAPISupport\DxgiSupport2">
+      <UniqueIdentifier>{059ab3fb-f8b3-4cae-b5d3-72bd857e5197}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\WindowsWebExperienceDetector">
+      <UniqueIdentifier>{4f233c31-4fef-48c1-8176-845ddd21debb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\公共的类\FileDialogEx">
+      <UniqueIdentifier>{0745b192-f366-4a31-b238-d372d5b62492}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="资源文件\icons">
+      <UniqueIdentifier>{830bdf63-7703-45a3-9e5d-a87cc2f2bb70}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="资源文件\bitmaps">
+      <UniqueIdentifier>{322d1b74-5d71-43bd-ae50-b33f24b1b31c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="源文件和头文件\对话框类\选项设置对话框\Win11TaskbarSettingDlg">
+      <UniqueIdentifier>{d048fa7a-2509-4713-9df3-c537c4b35018}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
@@ -418,6 +460,57 @@
     <ClInclude Include="DllFunctions.h">
       <Filter>源文件和头文件\公共的类\DllFunctions</Filter>
     </ClInclude>
+    <ClInclude Include="D2D1Support.h">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport\D2D1Support</Filter>
+    </ClInclude>
+    <ClInclude Include="Nullable.hpp">
+      <Filter>源文件和头文件\公共的类\Nullable</Filter>
+    </ClInclude>
+    <ClInclude Include="DrawTextManager.h">
+      <Filter>源文件和头文件\公共的类\DrawTextManager</Filter>
+    </ClInclude>
+    <ClInclude Include="HResultException.h">
+      <Filter>源文件和头文件\公共的类\HResultException</Filter>
+    </ClInclude>
+    <ClInclude Include="D3D10Support1.h">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport\D3D10Support1</Filter>
+    </ClInclude>
+    <ClInclude Include="Image2DEffect.h">
+      <Filter>源文件和头文件\公共的类\Image2DEffect</Filter>
+    </ClInclude>
+    <ClInclude Include="IDrawCommon.h">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClInclude>
+    <ClInclude Include="DrawCommonFactory.h">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClInclude>
+    <ClInclude Include="RenderAPISupport.h">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport</Filter>
+    </ClInclude>
+    <ClInclude Include="DCompositionSupport.h">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport\DCompositionSupport</Filter>
+    </ClInclude>
+    <ClInclude Include="Dxgi1Support2.h">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport\DxgiSupport2</Filter>
+    </ClInclude>
+    <ClInclude Include="TaskBarDlgDrawCommon.h">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClInclude>
+    <ClInclude Include="SupportedRenderEnums.h">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClInclude>
+    <ClInclude Include="WindowsWebExperienceDetector.h">
+      <Filter>源文件和头文件\公共的类\WindowsWebExperienceDetector</Filter>
+    </ClInclude>
+    <ClInclude Include="SkinAutoAdaptSettingDlg.h">
+      <Filter>源文件和头文件\对话框类\SkinDlg</Filter>
+    </ClInclude>
+    <ClInclude Include="FileDialogEx.h">
+      <Filter>源文件和头文件\头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="Win11TaskbarSettingDlg.h">
+      <Filter>源文件和头文件\对话框类\选项设置对话框\Win11TaskbarSettingDlg</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="StaticEx.cpp">
@@ -618,6 +711,48 @@
     <ClCompile Include="DllFunctions.cpp">
       <Filter>源文件和头文件\公共的类\DllFunctions</Filter>
     </ClCompile>
+    <ClCompile Include="D2D1Support.cpp">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport\D2D1Support</Filter>
+    </ClCompile>
+    <ClCompile Include="DrawTextManager.cpp">
+      <Filter>源文件和头文件\公共的类\DrawTextManager</Filter>
+    </ClCompile>
+    <ClCompile Include="HResultException.cpp">
+      <Filter>源文件和头文件\公共的类\HResultException</Filter>
+    </ClCompile>
+    <ClCompile Include="D3D10Support1.cpp">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport\D3D10Support1</Filter>
+    </ClCompile>
+    <ClCompile Include="Image2DEffect.cpp">
+      <Filter>源文件和头文件\公共的类\Image2DEffect</Filter>
+    </ClCompile>
+    <ClCompile Include="DrawCommonFactory.cpp">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClCompile>
+    <ClCompile Include="DCompositionSupport.cpp">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport\DCompositionSupport</Filter>
+    </ClCompile>
+    <ClCompile Include="Dxgi1Support2.cpp">
+      <Filter>源文件和头文件\公共的类\RenderAPISupport\DxgiSupport2</Filter>
+    </ClCompile>
+    <ClCompile Include="TaskBarDlgDrawCommon.cpp">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClCompile>
+    <ClCompile Include="SupportedRenderEnums.cpp">
+      <Filter>源文件和头文件\公共的类\DrawCommon</Filter>
+    </ClCompile>
+    <ClCompile Include="WindowsWebExperienceDetector.cpp">
+      <Filter>源文件和头文件\公共的类\WindowsWebExperienceDetector</Filter>
+    </ClCompile>
+    <ClCompile Include="SkinAutoAdaptSettingDlg.cpp">
+      <Filter>源文件和头文件\对话框类\SkinDlg</Filter>
+    </ClCompile>
+    <ClCompile Include="FileDialogEx.cpp">
+      <Filter>源文件和头文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Win11TaskbarSettingDlg.cpp">
+      <Filter>源文件和头文件\对话框类\选项设置对话框\Win11TaskbarSettingDlg</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="TrafficMonitor.rc">
@@ -635,101 +770,104 @@
     <None Include="..\LICENSE_CN" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="res\TrafficMonitor.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\about_background.bmp">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\donate.bmp">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\notifyicon.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\about_background_hd.bmp">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\notifyicon2.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\notifyicon3.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\notify_preview.bmp">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\notifyicon4.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\notify_preview_light.bmp">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\donate_wechart.bmp">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\bitmap3.bmp">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\exit.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\help.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\info.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\lock.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\setting.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\statistics.ico">
-      <Filter>资源文件</Filter>
-    </Image>
     <Image Include="res\menu_icon\close.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\pin.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\skn.ico">
-      <Filter>资源文件</Filter>
+      <Filter>资源文件\icons</Filter>
     </Image>
     <Image Include="res\menu_icon\connection.ico">
-      <Filter>资源文件</Filter>
+      <Filter>资源文件\icons</Filter>
     </Image>
-    <Image Include="res\menu_icon\mouse.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\main_window.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\taskbar_window.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\notify.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\more.ico">
-      <Filter>资源文件</Filter>
-    </Image>
-    <Image Include="res\menu_icon\item.ico">
-      <Filter>资源文件</Filter>
+    <Image Include="res\menu_icon\exit.ico">
+      <Filter>资源文件\icons</Filter>
     </Image>
     <Image Include="res\menu_icon\function.ico">
-      <Filter>资源文件</Filter>
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\help.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\info.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\item.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\lock.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\main_window.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\more.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\mouse.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\notify.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\notifyicon.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\notifyicon2.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\notifyicon3.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\notifyicon4.ico">
+      <Filter>资源文件\icons</Filter>
     </Image>
     <Image Include="res\notifyicon5.ico">
-      <Filter>资源文件</Filter>
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\pin.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\plugin_disabled.ico">
+      <Filter>资源文件\icons</Filter>
     </Image>
     <Image Include="res\menu_icon\plugins.ico">
-      <Filter>资源文件</Filter>
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\setting.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\skn.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\statistics.ico">
+      <Filter>资源文件\icons</Filter>
     </Image>
     <Image Include="res\menu_icon\task_manager.ico">
-      <Filter>资源文件</Filter>
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\menu_icon\taskbar_window.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\TrafficMonitor.ico">
+      <Filter>资源文件\icons</Filter>
+    </Image>
+    <Image Include="res\about_background.bmp">
+      <Filter>资源文件\bitmaps</Filter>
+    </Image>
+    <Image Include="res\about_background_hd.bmp">
+      <Filter>资源文件\bitmaps</Filter>
+    </Image>
+    <Image Include="res\bitmap3.bmp">
+      <Filter>资源文件\bitmaps</Filter>
+    </Image>
+    <Image Include="res\donate.bmp">
+      <Filter>资源文件\bitmaps</Filter>
+    </Image>
+    <Image Include="res\donate_wechart.bmp">
+      <Filter>资源文件\bitmaps</Filter>
+    </Image>
+    <Image Include="res\notify_preview.bmp">
+      <Filter>资源文件\bitmaps</Filter>
+    </Image>
+    <Image Include="res\notify_preview_light.bmp">
+      <Filter>资源文件\bitmaps</Filter>
     </Image>
   </ItemGroup>
 </Project>

@@ -8,6 +8,15 @@
 #include "TrafficMonitorDlg.h"
 #include "WindowsSettingHelper.h"
 #include "WIC.h"
+#include "Nullable.hpp"
+#include "DrawCommonFactory.h"
+#include "WindowsWebExperienceDetector.h"
+
+#ifdef DEBUG
+// DX调试信息捕获
+#include "dxgi1_3.h"
+#include "DXProgrammableCapture.h"
+#endif
 
 // CTaskBarDlg 对话框
 
@@ -16,7 +25,6 @@ IMPLEMENT_DYNAMIC(CTaskBarDlg, CDialogEx)
 CTaskBarDlg::CTaskBarDlg(CWnd* pParent /*=NULL*/)
     : CDialogEx(IDD_TASK_BAR_DIALOG, pParent)
 {
-
 }
 
 CTaskBarDlg::~CTaskBarDlg()
@@ -32,7 +40,6 @@ void CTaskBarDlg::DoDataExchange(CDataExchange* pDX)
     CDialogEx::DoDataExchange(pDX);
 }
 
-
 BEGIN_MESSAGE_MAP(CTaskBarDlg, CDialogEx)
     ON_WM_RBUTTONUP()
     ON_WM_INITMENU()
@@ -46,30 +53,138 @@ BEGIN_MESSAGE_MAP(CTaskBarDlg, CDialogEx)
     ON_MESSAGE(WM_TABLET_QUERYSYSTEMGESTURESTATUS, &CTaskBarDlg::OnTabletQuerysystemgesturestatus)
 END_MESSAGE_MAP()
 
-
 // CTaskBarDlg 消息处理程序
-
 
 void CTaskBarDlg::ShowInfo(CDC* pDC)
 {
-    if (this->GetSafeHwnd() == NULL || pDC == nullptr || !IsWindow(this->GetSafeHwnd())) return;
-
-    if (m_rect.IsRectEmpty() || m_rect.IsRectNull()) return;
-    CRect draw_rect{ m_rect };      //绘图的矩形区域
+    HWND current_hwnd = this->GetSafeHwnd();
+    if (current_hwnd == NULL || !IsWindow(this->GetSafeHwnd()))
+        return;
+    if (m_rect.IsRectEmpty() || m_rect.IsRectNull())
+        return;
+    if (m_supported_render_enums.IsD2D1Enabled())
+    {
+        auto last_update_layered_window_error =
+            theApp.m_taskbar_data.update_layered_window_error_code;
+        if (last_update_layered_window_error)
+        {
+            m_supported_render_enums.DisableD2D1();
+            if (!m_supported_render_enums.IsD2D1WithDCompositionEnabled())
+            {
+                m_supported_render_enums.EnableDefaultOnly();
+                LogWin32ApiErrorMessage(last_update_layered_window_error);
+                CString error_info{};
+                error_info.Format(
+                    _T("Call UpdateLayeredWindowIndirect failed. Use GDI render instead. Error code = %ld."),
+                    last_update_layered_window_error);
+                CCommon::WriteLog(error_info, theApp.m_log_path.c_str());
+                // 禁用D2D
+                theApp.m_taskbar_data.disable_d2d = true;
+                // 展示错误信息
+                ::MessageBox(NULL, CCommon::LoadText(IDS_UPDATE_TASKBARDLG_FAILED_TIP), NULL, MB_OK | MB_ICONWARNING);
+            }
+        }
+    }
+    auto render_type = m_supported_render_enums.GetAutoFitEnum();
+    CRect draw_rect{m_rect}; // 绘图的矩形区域
     draw_rect.MoveToXY(0, 0);
-    //设置缓冲的DC
-    CDrawDoubleBuffer draw_double_buffer(pDC, draw_rect);
-    //绘图
-    CDrawCommon draw;
-    draw.Create(draw_double_buffer.GetMemDC(), nullptr);
-    draw.FillRect(draw_rect, theApp.m_taskbar_data.back_color);       //填充背景色
-    draw.SetFont(&m_font);
-    draw.SetBackColor(theApp.m_taskbar_data.back_color);
 
-    //计算各部分的位置
+#ifdef DEBUG
+    Microsoft::WRL::ComPtr<IDXGraphicsAnalysis> p_dxgi_analysis{};
+#endif
+    // 初始化DrawBuffer和DrawCommon栈内存
+    AllInvolvedDrawCommonObjectsStorage all_involved_draw_common_objects{};
+    IDrawCommon* draw_common_interface{nullptr};
+    std::tie(std::ignore, draw_common_interface) =
+        GetInterfaceFromAllInvolvedDrawCommonObjects(
+            all_involved_draw_common_objects,
+            render_type,
+            {{DrawCommonHelper::RenderType::DEFAULT,
+              [&](IDrawBuffer* p_draw_buffer_interface, IDrawCommon* p_draw_common_interface)
+              {
+                  auto p_draw_buffer = static_cast<CDrawDoubleBuffer*>(p_draw_buffer_interface);
+                  auto p_draw_common = static_cast<CDrawCommon*>(p_draw_common_interface);
+
+                  // 必须先于绘图对象构造
+                  EmplaceAt(p_draw_buffer, pDC, draw_rect);
+                  // 这里构造绘图对象
+                  EmplaceAt(p_draw_common);
+                  p_draw_common->Create(p_draw_buffer->GetMemDC(), nullptr);
+                  p_draw_common->FillRect(draw_rect, theApp.m_taskbar_data.back_color); // 填充背景色
+                  p_draw_common->SetFont(&m_font);
+                  p_draw_common->SetBackColor(theApp.m_taskbar_data.back_color);
+              }},
+             {DrawCommonHelper::RenderType::D2D1_WITH_DCOMPOSITION,
+              [&](IDrawBuffer* p_draw_buffer_interface, IDrawCommon* p_draw_common_interface)
+              {
+                  auto p_draw_buffer = static_cast<CTaskBarDlgDrawBufferUseDComposition*>(p_draw_buffer_interface);
+                  auto p_draw_common = static_cast<CTaskBarDlgDrawCommon*>(p_draw_common_interface);
+
+                  auto& ref_d2d1_app_support = theApp.m_d2d_taskbar_draw_common_support.Get();
+                  m_d2d1_device_context_support.Get().SetWorkingDevice(
+                      ref_d2d1_app_support.GetDCompositionDevice(),
+                      ref_d2d1_app_support.GetD3D10Device1(),
+                      m_hWnd);
+                  // 这里与上面相反，是先构造DrawCommon再构造Buffer
+                  // 这里构造绘图对象
+                  EmplaceAt(p_draw_common);
+                  D2D1_SIZE_U d2d_size;
+                  d2d_size.width = draw_rect.Width();
+                  d2d_size.height = draw_rect.Height();
+                  p_draw_common->Create(
+                      this->m_taskbar_draw_common_window_support.Get(),
+                      this->m_d2d1_device_context_support.Get(),
+                      d2d_size);
+                  // 仅透明时，且UpdateLayeredWindowIndirect失败时，启用此渲染器，默认初始化为全黑，alpha=1
+                  p_draw_common->FillRect(draw_rect, 0x00000000, 1);
+                  p_draw_common->SetFont(&m_font);
+                  p_draw_common->SetBackColor(theApp.m_taskbar_data.back_color);
+                  // 构造buffer
+                  EmplaceAt(p_draw_buffer, this->m_d2d1_device_context_support.Get());
+              }},
+             {DrawCommonHelper::RenderType::D2D1,
+              [&](IDrawBuffer* p_draw_buffer_interface, IDrawCommon* p_draw_common_interface)
+              {
+                  auto p_draw_buffer = static_cast<CTaskBarDlgDrawBuffer*>(p_draw_buffer_interface);
+                  auto p_draw_common = static_cast<CTaskBarDlgDrawCommon*>(p_draw_common_interface);
+
+                  auto& ref_d2d1_app_support = theApp.m_d2d_taskbar_draw_common_support.Get();
+                  m_d2d1_device_context_support.Get().SetWorkingDevice(ref_d2d1_app_support.GetD3D10Device1());
+                  // 这里与上面相反，是先构造DrawCommon再构造Buffer
+                  // 这里构造绘图对象
+                  EmplaceAt(p_draw_common);
+                  D2D1_SIZE_U d2d_size;
+                  d2d_size.width = draw_rect.Width();
+                  d2d_size.height = draw_rect.Height();
+                  p_draw_common->Create(
+                      this->m_taskbar_draw_common_window_support.Get(),
+                      this->m_d2d1_device_context_support.Get(),
+                      d2d_size);
+                  // 仅透明时启用此渲染器，默认初始化为全黑，alpha=1
+                  p_draw_common->FillRect(draw_rect, 0x00000000, 1);
+                  p_draw_common->SetFont(&m_font);
+                  p_draw_common->SetBackColor(theApp.m_taskbar_data.back_color);
+                  // 构造buffer
+                  CSize draw_size{draw_rect.Width(), draw_rect.Height()};
+                  EmplaceAt(p_draw_buffer,
+                            this->m_taskbar_draw_common_window_support.Get(),
+                            this->m_d2d1_device_context_support.Get(),
+                            draw_size,
+                            current_hwnd);
+
+#ifdef DEBUG
+                  DXGIGetDebugInterface1(0, IID_PPV_ARGS(&p_dxgi_analysis));
+                  if (p_dxgi_analysis)
+                  {
+                      p_dxgi_analysis->BeginCapture();
+                  }
+#endif
+              }}});
+    IDrawCommon& draw = *draw_common_interface;
+    // 计算各部分的位置
     int index = 0;
     CRect item_rect{};
-    int item_count = static_cast<int>(m_item_widths.size());  //要显示的项目数量
+    int item_count = static_cast<int>(m_item_widths.size()); //要显示的项目数量
     auto last_iter = m_item_widths.begin();
     for (auto iter = m_item_widths.begin(); iter != m_item_widths.end(); ++iter)
     {
@@ -77,7 +192,7 @@ void CTaskBarDlg::ShowInfo(CDC* pDC)
         //任务栏在桌面顶部或底部
         if (IsTasksbarOnTopOrBottom())
         {
-            if (theApp.m_taskbar_data.horizontal_arrange)   //水平排列
+            if (theApp.m_taskbar_data.horizontal_arrange) //水平排列
             {
                 if (index > 0)
                     item_rect.MoveToX(item_rect.right + DPI(theApp.m_taskbar_data.item_space));
@@ -88,19 +203,19 @@ void CTaskBarDlg::ShowInfo(CDC* pDC)
                 else
                     DrawDisplayItem(draw, iter->item_type, item_rect, iter->item_width.label_width);
             }
-            else        //非水平排列时，每两个一组显示
+            else //非水平排列时，每两个一组显示
             {
                 //在index为奇数时同时绘制两个项目
                 if (index % 2 == 1)
                 {
                     CRect item_rect_up;     //上面一个项目的矩形区域
                     if (index > 0)
-                        item_rect_up.MoveToXY(item_rect.right + DPI(theApp.m_taskbar_data.item_space), 0);
+                        item_rect_up.MoveToXY(item_rect.right + DPI(theApp.m_taskbar_data.item_space), -DPI(theApp.m_taskbar_data.vertical_margin));
                     item_rect.left = item_rect_up.left;
                     item_rect.top = (m_window_height - TASKBAR_WND_HEIGHT / 2);
                     //确定窗口大小
                     item_rect_up.bottom = item_rect.top - 1;
-                    item_rect.bottom = m_window_height;
+                    item_rect.bottom = m_window_height + DPI(theApp.m_taskbar_data.vertical_margin);
                     int width = max(iter->item_width.TotalWidth(), last_item_width.TotalWidth());
                     item_rect.right = item_rect.left + width;
                     item_rect_up.right = item_rect_up.left + width;
@@ -109,7 +224,6 @@ void CTaskBarDlg::ShowInfo(CDC* pDC)
                         DrawPluginItem(draw, last_iter->plugin_item, item_rect_up, last_item_width.label_width);
                     else
                         DrawDisplayItem(draw, last_iter->item_type, item_rect_up, last_item_width.label_width);
-
                     if (iter->is_plugin)
                         DrawPluginItem(draw, iter->plugin_item, item_rect, iter->item_width.label_width);
                     else
@@ -140,13 +254,19 @@ void CTaskBarDlg::ShowInfo(CDC* pDC)
             else
                 DrawDisplayItem(draw, iter->item_type, item_rect, iter->item_width.label_width);
         }
-
         index++;
         last_iter = iter;
     }
+
+#ifdef DEBUG
+    if (p_dxgi_analysis)
+    {
+        p_dxgi_analysis->EndCapture();
+    }
+#endif
 }
 
-void CTaskBarDlg::DrawDisplayItem(CDrawCommon& drawer, DisplayItem type, CRect rect, int label_width, bool vertical)
+void CTaskBarDlg::DrawDisplayItem(IDrawCommon& drawer, DisplayItem type, CRect rect, int label_width, bool vertical)
 {
     m_item_rects[type] = rect;
     //设置要绘制的文本颜色
@@ -349,15 +469,41 @@ void CTaskBarDlg::DrawDisplayItem(CDrawCommon& drawer, DisplayItem type, CRect r
     else if (type == TDI_CPU_FREQ) {
         str_value = CCommon::FreqToString(theApp.m_cpu_freq, theApp.m_taskbar_data);
     }
+    else if (type == TDI_TODAY_TRAFFIC)
+    {
+        str_value = CCommon::KBytesToString((theApp.m_today_up_traffic + theApp.m_today_down_traffic) / 1024u);
+    }
 
     drawer.DrawWindowText(rect_value, str_value, text_color, value_alignment);
 }
 
-void CTaskBarDlg::DrawPluginItem(CDrawCommon& drawer, IPluginItem* item, CRect rect, int label_width, bool vertical)
+void CTaskBarDlg::DrawPluginItem(IDrawCommon& drawer, IPluginItem* item, CRect rect, int label_width, bool vertical)
 {
     if (item == nullptr)
         return;
     m_item_rects[item] = rect;
+
+    //绘制资源占用图
+    ITMPlugin* plugin = theApp.m_plugins.GetPluginByItem(item);
+    if (theApp.m_taskbar_data.show_status_bar && plugin != nullptr && plugin->GetAPIVersion() >= 6)
+    {
+        if (item->IsDrawResourceUsageGraph())
+        {
+             int figure_value = item->GetResourceUsageGraphValue() * 100;
+            //横向滚动图
+            if (theApp.m_taskbar_data.cm_graph_type)
+            {
+                AddHisToList(item, figure_value);
+                TryDrawGraph(drawer, rect, item);
+            }
+            //柱状图
+            else
+            {
+                TryDrawStatusBar(drawer, rect, figure_value);
+            }
+        }
+    }
+
     //设置要绘制的文本颜色
     COLORREF label_text_color{};
     COLORREF value_text_color{};
@@ -378,15 +524,31 @@ void CTaskBarDlg::DrawPluginItem(CDrawCommon& drawer, IPluginItem* item, CRect r
         const COLORREF& bk{ theApp.m_taskbar_data.back_color };
         int background_brightness{ (GetRValue(bk) + GetGValue(bk) + GetBValue(bk)) / 3 };
         //由插件自绘
-        ITMPlugin* plugin = theApp.m_plugins.GetPluginByItem(item);
         if (plugin != nullptr && plugin->GetAPIVersion() >= 2)
         {
             plugin->OnExtenedInfo(ITMPlugin::EI_LABEL_TEXT_COLOR, std::to_wstring(label_text_color).c_str());
             plugin->OnExtenedInfo(ITMPlugin::EI_VALUE_TEXT_COLOR, std::to_wstring(value_text_color).c_str());
             plugin->OnExtenedInfo(ITMPlugin::EI_DRAW_TASKBAR_WND, L"1");
         }
-        drawer.GetDC()->SetTextColor(value_text_color);
-        item->DrawItem(drawer.GetDC()->GetSafeHdc(), rect.left, rect.top, rect.Width(), rect.Height(), background_brightness < 128);
+        drawer.SetTextColor(value_text_color);
+        //需要rtti
+        if (typeid(drawer) == typeid(CDrawCommon))
+        {
+            auto* p_dc = static_cast<CDrawCommon&>(drawer).GetDC();
+            item->DrawItem(p_dc->GetSafeHdc(), rect.left, rect.top, rect.Width(), rect.Height(), background_brightness < 128);
+        }
+        else if (typeid(drawer) == typeid(CTaskBarDlgDrawCommon))
+        {
+            auto& ref_d2d1_drawer = static_cast<CTaskBarDlgDrawCommon&>(drawer);
+            ref_d2d1_drawer.ExecuteGdiOperation(rect,
+                                                [item, rect, background_brightness](HDC gdi_dc)
+                                                { item->DrawItem(gdi_dc,
+                                                                 rect.left,
+                                                                 rect.top,
+                                                                 rect.Width(),
+                                                                 rect.Height(),
+                                                                 background_brightness < 128); });
+        }
     }
     else
     {
@@ -426,7 +588,38 @@ void CTaskBarDlg::MoveWindow(CRect rect)
     }
 }
 
-void CTaskBarDlg::TryDrawStatusBar(CDrawCommon& drawer, const CRect& rect_bar, int usage_percent)
+void CTaskBarDlg::DisableRenderFeatureIfNecessary(CSupportedRenderEnums& ref_supported_render_enums)
+{
+    bool is_transparent = theApp.m_taskbar_data.IsTaskbarTransparent();
+    // UpdateLayeredWindowIndirect失败则禁用D2D
+    if (theApp.m_taskbar_data.update_layered_window_error_code)
+    {
+        ref_supported_render_enums.DisableD2D1();
+    }
+    // 不符合条件则启用Default（MFC）
+    if (!is_transparent || theApp.m_taskbar_data.auto_set_background_color || theApp.m_taskbar_data.disable_d2d)
+    {
+        ref_supported_render_enums.EnableDefaultOnly();
+    }
+}
+
+HWND CTaskBarDlg::GetShellTrayWndHandleAndSaveWindows11TaskBarExistenceInfoToTheApp() noexcept
+{
+    auto result = ::FindWindow(L"Shell_TrayWnd", NULL);
+    // 在“Shell_TrayWnd”的子窗口找到类名为“Windows.UI.Composition.DesktopWindowContentBridge”的窗口则认为是Windows11的任务栏
+    if (theApp.m_win_version.IsWindows11OrLater())
+    {
+        theApp.m_is_windows11_taskbar =
+            (::FindWindowExW(result, 0, L"Windows.UI.Composition.DesktopWindowContentBridge", NULL) != NULL);
+    }
+    else
+    {
+        theApp.m_is_windows11_taskbar = false;
+    }
+    return result;
+}
+
+void CTaskBarDlg::TryDrawStatusBar(IDrawCommon& drawer, const CRect& rect_bar, int usage_percent)
 {
     CSize fill_size = CSize(rect_bar.Width() * usage_percent / 100, rect_bar.Height());
     CRect rect_fill(rect_bar.TopLeft(), fill_size);
@@ -463,16 +656,26 @@ bool CTaskBarDlg::AdjustWindowPos()
             m_rcMinOri = m_rcMin;
             m_left_space = m_rcMin.left - m_rcBar.left;
             m_min_bar_width = m_rcMin.Width() - m_rect.Width(); //保存最小化窗口宽度
-            //设置为任务窗口不显示在左侧时，或者Windows11下任务栏左对齐时
+            //任务窗口显示在右侧时，或者Windows11下任务栏左对齐时
             //（Windows11下，如果任务栏设置为左对齐，即使在“任务栏窗口设置”中设置了任务窗口显示在左边，窗口仍然显示在右边）
             if (!theApp.m_taskbar_data.tbar_wnd_on_left || (theApp.m_is_windows11_taskbar && !CWindowsSettingHelper::IsTaskbarCenterAlign()))
             {
                 if (theApp.m_is_windows11_taskbar)
                 {
-                    if (!theApp.m_taskbar_data.tbar_wnd_snap)
-                        m_rect.MoveToX(m_rcNotify.left - m_rect.Width() + 2);
-                    else
+                    //靠近任务栏图标的情况
+                    if (theApp.m_taskbar_data.tbar_wnd_snap && IsTaskbarCloseToIconEnable(theApp.m_taskbar_data.tbar_wnd_on_left))
+                    {
                         m_rect.MoveToX(m_rcMin.right + 2);
+                    }
+                    //靠近通知区的情况
+                    else
+                    {
+                        //如果显示了小组件，并且任务栏靠左显示，则留出小组件的位置
+                        if (theApp.m_taskbar_data.avoid_overlap_with_widgets && CWindowsSettingHelper::IsTaskbarWidgetsBtnShown() && !CWindowsSettingHelper::IsTaskbarCenterAlign())
+                            m_rect.MoveToX(m_rcNotify.left - m_rect.Width() + 2 - DPI(theApp.m_taskbar_data.taskbar_left_space_win11));
+                        else
+                            m_rect.MoveToX(m_rcNotify.left - m_rect.Width() + 2);
+                    }
                 }
                 else
                 {
@@ -480,37 +683,26 @@ bool CTaskBarDlg::AdjustWindowPos()
                     m_rect.MoveToX(m_left_space + m_rcMin.Width() - m_rect.Width() + 2);
                 }
             }
+            //任务栏窗口显示在左侧时
             else
             {
                 if (theApp.m_is_windows11_taskbar)
                 {
                     //if (CWindowsSettingHelper::IsTaskbarCenterAlign())      //Windows11任务栏居中
                     //{
+                    //靠近“开始”按钮
                     if (theApp.m_taskbar_data.tbar_wnd_snap)
                     {
-                        int taskbar_btn_width = DPI(44);      //Win11任务栏“运行中的程序”左侧4个按钮（开始、搜索、任务视图、聊天）的宽度，每个按钮44像素。（“开始”按钮总是显示）
-                        if (CWindowsSettingHelper::IsTaskbarSearchBtnShown())
-                        {
-                            if (theApp.m_win_version.IsWindows11BigSearchButton())
-                                taskbar_btn_width += DPI(107);      //最新版本的Windows11的搜索按钮比其他按钮宽
-                            else
-                                taskbar_btn_width += DPI(44);
-                        }
-                        if (CWindowsSettingHelper::IsTaskbarTaskViewBtnShown())
-                        {
-                            taskbar_btn_width += DPI(44);
-                        }
-                        if (CWindowsSettingHelper::IsTaskbarChartBtnShown())
-                        {
-                            taskbar_btn_width += DPI(44);
-                        }
+                        CRect rcStart;
+                        ::GetWindowRect(m_hStart, rcStart);
 
-                        m_rect.MoveToX(m_rcMin.left - m_rect.Width() - 2 - taskbar_btn_width);
+                        m_rect.MoveToX(rcStart.left - m_rect.Width() - 2);
                     }
+                    //靠近最左侧
                     else
                     {
                         if (CWindowsSettingHelper::IsTaskbarWidgetsBtnShown())
-                            m_rect.MoveToX(2 + DPI(theApp.m_cfg_data.taskbar_left_space_win11));
+                            m_rect.MoveToX(2 + DPI(theApp.m_taskbar_data.taskbar_left_space_win11));
                         else
                             m_rect.MoveToX(2);
                     }
@@ -526,7 +718,36 @@ bool CTaskBarDlg::AdjustWindowPos()
                     m_rect.MoveToX(m_left_space);
                 }
             }
-            m_rect.MoveToY((m_rcTaskbar.Height() - m_rect.Height()) / 2);
+            //水平偏移
+            if (theApp.m_is_windows11_taskbar)
+            {
+                m_rect.MoveToX(m_rect.left + DPI(theApp.m_taskbar_data.window_offset_left));
+                //确保水平方向不超出屏幕边界
+                if (m_rect.left < 0)
+                    m_rect.MoveToX(0);
+                if (m_rcTaskbar.Width() > m_rect.Width() && m_rect.right > m_rcTaskbar.Width())
+                    m_rect.MoveToX(m_rcTaskbar.Width() - m_rect.Width());
+            }
+
+            //设置任务栏窗口的垂直位置
+            if (theApp.m_is_windows11_taskbar)
+            {
+                CRect rcStart;
+                ::GetWindowRect(m_hStart, rcStart);
+                //注：这里加上(m_rcTaskbar.Height() - rcStart.Height())用于修正Windows11 build 22621版本后触屏设备任务栏窗口位置不正确的问题。
+                //在这种情况下m_rcTaskbar的高度要大于m_rcBar的高度，正常情况下，它们的高度相同
+                //但是当任务栏上没有任何图标时，m_rcBar的高度会变为0，因此使用rcStart代替
+                m_rect.MoveToY((rcStart.Height() - m_rect.Height()) / 2 + (m_rcTaskbar.Height() - rcStart.Height()) + DPI(theApp.m_taskbar_data.window_offset_top));
+                //确保垂直方向不超出屏幕边界
+                if (m_rect.top < 0)
+                    m_rect.MoveToY(0);
+                if (m_rcTaskbar.Height() > m_rect.Height() && m_rect.bottom > m_rcTaskbar.Height())
+                    m_rect.MoveToY(m_rcTaskbar.Height() - m_rect.Height());
+            }
+            else
+            {
+                m_rect.MoveToY((m_rcBar.Height() - m_rect.Height()) / 2);
+            }
             if (theApp.m_taskbar_data.horizontal_arrange && theApp.m_win_version.IsWindows7())
                 m_rect.MoveToY(m_rect.top + DPI(1));
             MoveWindow(m_rect);
@@ -586,8 +807,23 @@ void CTaskBarDlg::ApplyWindowTransparentColor()
     }
     if ((theApp.m_taskbar_data.transparent_color != 0) && theApp.m_taksbar_transparent_color_enable)
     {
-        SetWindowLong(m_hWnd, GWL_EXSTYLE, GetWindowLong(m_hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
-        SetLayeredWindowAttributes(theApp.m_taskbar_data.transparent_color, 0, LWA_COLORKEY);
+        auto render_type = m_supported_render_enums.GetAutoFitEnum();
+        switch (render_type)
+        {
+            using namespace DrawCommonHelper;
+        case RenderType::D2D1_WITH_DCOMPOSITION:
+            // D2D绘图并使用DComposition混合，不设置任何属性
+            break;
+        case RenderType::D2D1:
+            // D2D绘图直接使用alpha混合，只设置 WS_EX_LAYERED
+            SetWindowLong(m_hWnd, GWL_EXSTYLE, GetWindowLong(m_hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+            break;
+        case RenderType::DEFAULT:
+            // GDI绘图使用色键抠像
+            // 仅在透明且不使用自动决定背景颜色时启动D2D渲染器
+            SetWindowLong(m_hWnd, GWL_EXSTYLE, GetWindowLong(m_hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+            SetLayeredWindowAttributes(theApp.m_taskbar_data.transparent_color, 0, LWA_COLORKEY);
+        }
     }
     else
     {
@@ -614,6 +850,16 @@ void CTaskBarDlg::SetDPI(UINT dpi)
 UINT CTaskBarDlg::DPI(UINT pixel) const
 {
     return m_taskbar_dpi * pixel / 96;
+}
+
+int CTaskBarDlg::DPI(int pixel) const
+{
+    return static_cast<int>(m_taskbar_dpi) * pixel / 96;
+}
+
+LONG CTaskBarDlg::DPI(LONG pixel) const
+{
+    return static_cast<LONG>(m_taskbar_dpi) * pixel / 96;
 }
 
 void CTaskBarDlg::DPI(CRect& rect) const
@@ -707,6 +953,12 @@ CString CTaskBarDlg::GetMouseTipsInfo()
             CCommon::KBytesToString(theApp.m_total_memory));
         tip_info += temp;
     }
+    if (!IsItemShow(TDI_CPU_FREQ) && theApp.m_cpu_freq > 0)
+    {
+        temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_CPU_FREQ), CCommon::FreqToString(theApp.m_cpu_freq, theApp.m_taskbar_data));
+        tip_info += temp;
+    }
+
 #ifndef WITHOUT_TEMPERATURE
     CTrafficMonitorDlg* pMainWnd = dynamic_cast<CTrafficMonitorDlg*>(theApp.m_pMainWnd);
     if (pMainWnd->IsTemperatureNeeded())
@@ -719,11 +971,6 @@ CString CTaskBarDlg::GetMouseTipsInfo()
         if (!IsItemShow(TDI_CPU_TEMP) && theApp.m_cpu_temperature > 0)
         {
             temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_CPU_TEMPERATURE), CCommon::TemperatureToString(theApp.m_cpu_temperature, theApp.m_taskbar_data));
-            tip_info += temp;
-        }
-        if (!IsItemShow(TDI_CPU_FREQ) && theApp.m_cpu_freq > 0)
-        {
-            temp.Format(_T("\r\n%s: %s"), CCommon::LoadText(IDS_CPU_FREQ), CCommon::FreqToString(theApp.m_cpu_freq, theApp.m_taskbar_data));
             tip_info += temp;
         }
         if (!IsItemShow(TDI_GPU_TEMP) && theApp.m_gpu_temperature > 0)
@@ -861,10 +1108,8 @@ void CTaskBarDlg::CalculateWindowSize()
     int memory_width{ value_width };
     if (theApp.m_taskbar_data.memory_display == MemoryDisplay::MEMORY_USED || theApp.m_taskbar_data.memory_display == MemoryDisplay::MEMORY_AVAILABLE)
     {
-        if (theApp.m_taskbar_data.separate_value_unit_with_space)
-            str = _T("19.99 GB");
-        else
-            str = _T("19.99GB");
+        //宽度为总内存的宽度
+        str = CCommon::DataSizeToString(static_cast<unsigned long long>(theApp.m_total_memory) * 1024, theApp.m_taskbar_data.separate_value_unit_with_space);
         memory_width = m_pDC->GetTextExtent(str).cx;
     }
     item_widths[TDI_CPU].value_width = value_width;
@@ -885,6 +1130,9 @@ void CTaskBarDlg::CalculateWindowSize()
     item_widths[TDI_GPU_TEMP].value_width = value_width;
     item_widths[TDI_HDD_TEMP].value_width = value_width;
     item_widths[TDI_MAIN_BOARD_TEMP].value_width = value_width;
+
+    //今日已使用流量宽度
+    item_widths[TDI_TODAY_TRAFFIC].value_width = m_pDC->GetTextExtent(_T("999.99 MB")).cx;
 
     //计算插件项目的宽度
     for (const auto& plugin : theApp.m_plugins.GetPluginItems())
@@ -1012,29 +1260,46 @@ bool CTaskBarDlg::IsShowNetSpeed()
     return ((theApp.m_taskbar_data.m_tbar_display_item & TDI_UP) || (theApp.m_taskbar_data.m_tbar_display_item & TDI_DOWN));
 }
 
+bool CTaskBarDlg::IsTaskbarCloseToIconEnable(bool taskbar_wnd_on_left)
+{
+    //在Windows11中，当任务栏窗口显示在右侧时，如果勾选“任务栏窗口靠近图标而不是靠近任务栏窗口”会导致和图标重叠
+    //因为"MSTaskSwWClass"窗口的矩形区域不再是任务栏图标最小化按钮所在区域
+    return theApp.m_win_version.IsWindows11OrLater() &&
+        CWindowsSettingHelper::IsTaskbarCenterAlign() && taskbar_wnd_on_left;
+}
+
+std::wstring CTaskBarDlg::GetTaskbarDebugString() const
+{
+    std::wstring str = std::format(L"m_rcTaskbar: 左上坐标({},{}) 左下坐标({},{}) 大小({}x{})"
+        "\r\nm_rcBar: 左上坐标({},{}) 左下坐标({},{}) 大小({}x{})",
+        m_rcTaskbar.left, m_rcTaskbar.top, m_rcTaskbar.right, m_rcTaskbar.bottom, m_rcTaskbar.Width(), m_rcTaskbar.Height(),
+        m_rcBar.left, m_rcBar.top, m_rcBar.right, m_rcBar.bottom, m_rcBar.Width(), m_rcBar.Height());
+    return str;
+}
 
 BOOL CTaskBarDlg::OnInitDialog()
 {
     CDialogEx::OnInitDialog();
 
     // TODO:  在此添加额外的初始化
+    SetWindowText(TASKBAR_WINDOW_NAME);
+    // 检测系统是否安装了 MicrosoftWindows.Client.WebExperience (aka Windows Web Experience Pack)
+    theApp.m_taskbar_data.is_windows_web_experience_detected =
+        WindowsWebExperienceDetector::IsDetected();
+    // 根据任务栏窗口的设置禁用必要的渲染选项，仅透明且支持D2D渲染时才会使用D2D渲染
+    DisableRenderFeatureIfNecessary(m_supported_render_enums);
     //设置隐藏任务栏图标
     ModifyStyleEx(0, WS_EX_TOOLWINDOW);
 
     m_pDC = GetDC();
 
-    m_hTaskbar = ::FindWindow(L"Shell_TrayWnd", NULL); //寻找类名是Shell_TrayWnd的窗口句柄
+    m_hTaskbar = GetShellTrayWndHandleAndSaveWindows11TaskBarExistenceInfoToTheApp(); //寻找类名是Shell_TrayWnd的窗口句柄，同时记录Windows11任务栏是否存在
     m_hBar = ::FindWindowEx(m_hTaskbar, 0, L"ReBarWindow32", NULL); //寻找二级容器的句柄
     m_hMin = ::FindWindowEx(m_hBar, 0, L"MSTaskSwWClass", NULL);    //寻找最小化窗口的句柄
-    
-    m_hNotify = ::FindWindowEx(m_hTaskbar, 0, L"TrayNotifyWnd", NULL);
 
-    //在“Shell_TrayWnd”的子窗口找到类名为“Windows.UI.Composition.DesktopWindowContentBridge”的窗口则认为是Windows11的任务栏
-    if (theApp.m_win_version.IsWindows11OrLater())
-    {
-        theApp.m_is_windows11_taskbar = (::FindWindowExW(m_hTaskbar, 0, L"Windows.UI.Composition.DesktopWindowContentBridge", NULL) != NULL);
-    }
- 
+    m_hNotify = ::FindWindowEx(m_hTaskbar, 0, L"TrayNotifyWnd", NULL);
+    m_hStart = ::FindWindowEx(m_hTaskbar, nullptr, L"Start", NULL);
+
     //设置窗口透明色
     ApplyWindowTransparentColor();
 
@@ -1089,7 +1354,6 @@ BOOL CTaskBarDlg::OnInitDialog()
                   // 异常: OCX 属性页应返回 FALSE
 }
 
-
 void CTaskBarDlg::OnCancel()
 {
     // TODO: 在此添加专用代码和/或调用基类
@@ -1116,7 +1380,6 @@ void CTaskBarDlg::OnCancel()
 
     //CDialogEx::OnCancel();
 }
-
 
 void CTaskBarDlg::OnRButtonUp(UINT nFlags, CPoint point)
 {
@@ -1153,13 +1416,12 @@ void CTaskBarDlg::OnRButtonUp(UINT nFlags, CPoint point)
                 CMenuIcon::AddIconToMenuItem(pMenu->GetSafeHmenu(), 15, TRUE, plugin_icon);
         }
         //更新插件子菜单
-        theApp.UpdatePluginMenu(&theApp.m_taskbar_menu_plugin_sub_menu, plugin);
+        theApp.UpdatePluginMenu(&theApp.m_taskbar_menu_plugin_sub_menu, plugin, 2);
         //弹出菜单
         pMenu->TrackPopupMenu(TPM_LEFTALIGN | TPM_RIGHTBUTTON, point1.x, point1.y, this);
     }
     CDialogEx::OnRButtonUp(nFlags, point1);
 }
-
 
 void CTaskBarDlg::OnInitMenu(CMenu* pMenu)
 {
@@ -1207,8 +1469,8 @@ void CTaskBarDlg::OnInitMenu(CMenu* pMenu)
     }
 
     ::SendMessage(theApp.m_pMainWnd->GetSafeHwnd(), WM_TASKBAR_MENU_POPED_UP, 0, 0);        //通知主窗口菜单已弹出
+    ::SendMessage(theApp.m_pMainWnd->GetSafeHwnd(), WM_TASKBAR_MENU_POPED_UP, 0, 0); //通知主窗口菜单已弹出
 }
-
 
 BOOL CTaskBarDlg::PreTranslateMessage(MSG* pMsg)
 {
@@ -1240,14 +1502,12 @@ BOOL CTaskBarDlg::PreTranslateMessage(MSG* pMsg)
     return CDialogEx::PreTranslateMessage(pMsg);
 }
 
-
 void CTaskBarDlg::OnMouseMove(UINT nFlags, CPoint point)
 {
     // TODO: 在此添加消息处理程序代码和/或调用默认值
 
     CDialogEx::OnMouseMove(nFlags, point);
 }
-
 
 void CTaskBarDlg::OnLButtonDblClk(UINT nFlags, CPoint point)
 {
@@ -1287,7 +1547,6 @@ void CTaskBarDlg::OnLButtonDblClk(UINT nFlags, CPoint point)
     //CDialogEx::OnLButtonDblClk(nFlags, point);
 }
 
-
 void CTaskBarDlg::OnTimer(UINT_PTR nIDEvent)
 {
     // TODO: 在此添加消息处理程序代码和/或调用默认值
@@ -1302,7 +1561,6 @@ void CTaskBarDlg::OnTimer(UINT_PTR nIDEvent)
 
     CDialogEx::OnTimer(nIDEvent);
 }
-
 
 BOOL CTaskBarDlg::OnCommand(WPARAM wParam, LPARAM lParam)
 {
@@ -1343,16 +1601,63 @@ BOOL CTaskBarDlg::OnCommand(WPARAM wParam, LPARAM lParam)
     return CDialogEx::OnCommand(wParam, lParam);
 }
 
-
 void CTaskBarDlg::OnPaint()
 {
     CPaintDC dc(this); // device context for painting
                        // TODO: 在此处添加消息处理程序代码
                        // 不为绘图消息调用 CDialogEx::OnPaint()
-    ShowInfo(&dc);
+
+    try
+    {
+        ShowInfo(&dc);
+    }
+    catch (CD3D10Exception1& ex)
+    {
+        DrawCommonHelper::DefaultD2DDrawCommonExceptionHandler{ex}(
+            [p_window_support_wrapper = &this->m_taskbar_draw_common_window_support](CHResultException& ex)
+            {
+                return DrawCommonHelper::HandleIfNeedRecreate(
+                    ex,
+                    [p_window_support_wrapper]()
+                    { p_window_support_wrapper->Get().RequestD3D10Device1Recreate(); });
+            });
+    }
+    catch (CD2D1Exception& ex)
+    {
+        DrawCommonHelper::DefaultD2DDrawCommonExceptionHandler{ex}(
+            [p_device_context_support_wrapper = &this->m_d2d1_device_context_support](CHResultException& ex)
+            {
+                return DrawCommonHelper::HandleIfD2D1DeviceNeedRecreate(
+                    ex,
+                    [&]()
+                    { p_device_context_support_wrapper->Get().RequestD2D1DeviceRecreate(ex.GetHResult()); });
+            });
+    }
+    catch (CDCompositionException& ex)
+    {
+        DrawCommonHelper::DefaultD2DDrawCommonExceptionHandler{ex}(
+            [p_device_context_support_wrapper = &this->m_d2d1_device_context_support](CHResultException& ex)
+            {
+                p_device_context_support_wrapper->Get().RequestDCompositionDeviceRecreate(ex.GetHResult());
+                return true;
+            });
+    }
+    catch (CHResultException& ex)
+    {
+        DrawCommonHelper::DefaultD2DDrawCommonExceptionHandler{ex}();
+    }
+    catch (std::runtime_error& ex)
+    {
+        auto* log = ex.what();
+        CCommon::WriteLog(log, theApp.m_log_path.c_str());
+        // 目前只有它会主动抛异常，所有异常全部算它头上
+        DrawCommonHelper::DefaultD2DDrawCommonExceptionHandler::IncreaseErrorCountManually();
+        DrawCommonHelper::DefaultD2DDrawCommonExceptionHandler::HandleErrorCountIncrement();
+    }
+
 }
 
-void CTaskBarDlg::AddHisToList(DisplayItem item_type, int current_usage_percent)
+void CTaskBarDlg::AddHisToList(CommonDisplayItem item_type, int current_usage_percent)
 {
     int& data_count{ m_history_data_count[item_type] };
     std::list<int>& list = m_map_history_data[item_type];
@@ -1378,7 +1683,6 @@ void CTaskBarDlg::AddHisToList(DisplayItem item_type, int current_usage_percent)
     }
     data_count++;
 }
-
 
 int CTaskBarDlg::CalculateNetspeedPercent(unsigned __int64 net_speed)
 {
@@ -1406,7 +1710,7 @@ bool CTaskBarDlg::CheckClickedItem(CPoint point)
     return false;
 }
 
-void CTaskBarDlg::TryDrawGraph(CDrawCommon& drawer, const CRect& value_rect, DisplayItem item_type)
+void CTaskBarDlg::TryDrawGraph(IDrawCommon& drawer, const CRect& value_rect, CommonDisplayItem item_type)
 {
     std::list<int>& list = m_map_history_data[item_type];
     if (theApp.m_taskbar_data.show_graph_dashed_box)
@@ -1426,7 +1730,6 @@ void CTaskBarDlg::TryDrawGraph(CDrawCommon& drawer, const CRect& value_rect, Dis
     }
 }
 
-
 void CTaskBarDlg::OnClose()
 {
     // TODO: 在此添加消息处理程序代码和/或调用默认值
@@ -1434,7 +1737,6 @@ void CTaskBarDlg::OnClose()
 
     CDialogEx::OnClose();
 }
-
 
 void CTaskBarDlg::OnLButtonUp(UINT nFlags, CPoint point)
 {
@@ -1451,7 +1753,6 @@ void CTaskBarDlg::OnLButtonUp(UINT nFlags, CPoint point)
 
     CDialogEx::OnLButtonUp(nFlags, point);
 }
-
 
 afx_msg LRESULT CTaskBarDlg::OnExitmenuloop(WPARAM wParam, LPARAM lParam)
 {

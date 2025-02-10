@@ -31,7 +31,6 @@ void CGeneralSettingsDlg::CheckTaskbarDisplayItem()
     if (!theApp.m_general_data.IsHardwareEnable(HI_CPU))
     {
         theApp.m_taskbar_data.m_tbar_display_item &= ~TDI_CPU_TEMP;
-        theApp.m_taskbar_data.m_tbar_display_item &= ~TDI_CPU_FREQ;
     }
     if (!theApp.m_general_data.IsHardwareEnable(HI_GPU))
     {
@@ -62,15 +61,22 @@ void CGeneralSettingsDlg::SetControlMouseWheelEnable(bool enable)
     m_select_cpu_combo.SetMouseWheelEnable(enable);
 }
 
+void CGeneralSettingsDlg::OnSettingsApplied()
+{
+    //当设置被应用时，重置xxxx_ori的值
+    m_monitor_time_span_ori = m_data.monitor_time_span;
+    m_update_source_ori = m_data.update_source;
+}
+
 bool CGeneralSettingsDlg::ShowHardwareMonitorWarning()
 {
-    if (SHMessageBoxCheck(m_hWnd, CCommon::LoadText(IDS_HARDWARE_MONITOR_WARNING), APP_NAME, MB_OKCANCEL | MB_ICONWARNING, IDOK, _T("{B8A281A7-76DF-4F0F-BF6A-1A394EF8BAD5}")) == IDOK)
-    {
-        //if (SHMessageBoxCheck(m_hWnd, CCommon::LoadText(IDS_HARDWARE_MONITOR_WARNING2), APP_NAME, MB_OKCANCEL | MB_ICONWARNING, IDOK, _T("{2777F260-6175-41E4-AF59-4085B3F58E32}")) == IDOK)
-        //{
+    //如果已经有硬件监控项目被勾选了，则不再弹出提示
+    if (m_data.hardware_monitor_item != 0)
         return true;
-        //}
-    }
+
+    if (SHMessageBoxCheck(m_hWnd, CCommon::LoadText(IDS_HARDWARE_MONITOR_WARNING), APP_NAME, MB_OKCANCEL | MB_ICONWARNING, IDOK, _T("{B8A281A7-76DF-4F0F-BF6A-1A394EF8BAD5}")) == IDOK)
+        return true;
+
     return false;
 }
 
@@ -164,6 +170,8 @@ BEGIN_MESSAGE_MAP(CGeneralSettingsDlg, CTabDlg)
     ON_BN_CLICKED(IDC_SHOW_NOTIFY_ICON_CHECK, &CGeneralSettingsDlg::OnBnClickedShowNotifyIconCheck)
     ON_BN_CLICKED(IDC_SELECT_CONNECTIONS_BUTTON, &CGeneralSettingsDlg::OnBnClickedSelectConnectionsButton)
     ON_BN_CLICKED(IDC_RESET_AUTO_RUN_BUTTON, &CGeneralSettingsDlg::OnBnClickedResetAutoRunButton)
+    ON_BN_CLICKED(IDC_USE_HARDWARE_MONITOR_RADIO, &CGeneralSettingsDlg::OnBnClickedUseHardwareMonitorRadio)
+    ON_EN_CHANGE(IDC_MONITOR_SPAN_EDIT, &CGeneralSettingsDlg::OnEnChangeMonitorSpanEdit)
 END_MESSAGE_MAP()
 
 
@@ -222,19 +230,19 @@ BOOL CGeneralSettingsDlg::OnInitDialog()
     m_memory_tip_edit.SetValue(m_data.memory_usage_tip.tip_value);
 
     CheckDlgButton(IDC_CPU_TEMP_TIP_CHECK, m_data.cpu_temp_tip.enable);
-    m_cpu_temp_tip_edit.SetRange(1, 100);
+    m_cpu_temp_tip_edit.SetRange(1, 120);
     m_cpu_temp_tip_edit.SetValue(m_data.cpu_temp_tip.tip_value);
 
     CheckDlgButton(IDC_GPU_TEMP_TIP_CHECK, m_data.gpu_temp_tip.enable);
-    m_gpu_temp_tip_edit.SetRange(1, 100);
+    m_gpu_temp_tip_edit.SetRange(1, 120);
     m_gpu_temp_tip_edit.SetValue(m_data.gpu_temp_tip.tip_value);
 
     CheckDlgButton(IDC_HDD_TEMP_TIP_CHECK, m_data.hdd_temp_tip.enable);
-    m_hdd_temp_tip_edit.SetRange(1, 100);
+    m_hdd_temp_tip_edit.SetRange(1, 120);
     m_hdd_temp_tip_edit.SetValue(m_data.hdd_temp_tip.tip_value);
 
     CheckDlgButton(IDC_MBD_TEMP_TIP_CHECK, m_data.mainboard_temp_tip.enable);
-    m_mbd_temp_tip_edit.SetRange(1, 100);
+    m_mbd_temp_tip_edit.SetRange(1, 120);
     m_mbd_temp_tip_edit.SetValue(m_data.mainboard_temp_tip.tip_value);
 
     SetControlEnable();
@@ -254,8 +262,27 @@ BOOL CGeneralSettingsDlg::OnInitDialog()
     m_toolTip.AddTool(GetDlgItem(IDC_SAVE_TO_PROGRAM_DIR_RADIO), theApp.m_module_dir.c_str());
     AddOrUpdateAutoRunTooltip(true);
 
-    ((CButton*)GetDlgItem(IDC_USE_CPU_TIME_RADIO))->SetCheck(m_data.m_get_cpu_usage_by_cpu_times);
-    ((CButton*)GetDlgItem(IDC_USE_PDH_RADIO))->SetCheck(!m_data.m_get_cpu_usage_by_cpu_times);
+    if (m_data.cpu_usage_acquire_method == GeneralSettingData::CA_CPU_TIME)
+    {
+        CheckDlgButton(IDC_USE_CPU_TIME_RADIO, TRUE);
+    }
+    else if (m_data.cpu_usage_acquire_method == GeneralSettingData::CA_PDH)
+    {
+        CheckDlgButton(IDC_USE_PDH_RADIO, TRUE);
+    }
+    else if (m_data.cpu_usage_acquire_method == GeneralSettingData::CA_HARDWARE_MONITOR)
+    {
+        if (m_data.IsHardwareEnable(HI_CPU))
+            CheckDlgButton(IDC_USE_HARDWARE_MONITOR_RADIO, TRUE);
+        else
+            CheckDlgButton(IDC_USE_CPU_TIME_RADIO, TRUE);
+    }
+
+#ifndef WITHOUT_TEMPERATURE
+    EnableDlgCtrl(IDC_USE_HARDWARE_MONITOR_RADIO, m_data.IsHardwareEnable(HI_CPU));
+#else
+    EnableDlgCtrl(IDC_USE_HARDWARE_MONITOR_RADIO, false);
+#endif
 
     m_monitor_span_edit.SetRange(MONITOR_TIME_SPAN_MIN, MONITOR_TIME_SPAN_MAX);
     m_monitor_span_edit.SetValue(m_data.monitor_time_span);
@@ -372,20 +399,25 @@ void CGeneralSettingsDlg::OnOK()
         if (value < 1) value = 1;
         if (value > 100) value = 100;
     };
+    auto checkTempTipValue = [](int& value)
+    {
+        if (value < 1) value = 1;
+        if (value > 120) value = 120;
+    };
     m_data.memory_usage_tip.tip_value = m_memory_tip_edit.GetValue();
     checkTipValue(m_data.memory_usage_tip.tip_value);
 
     m_data.cpu_temp_tip.tip_value = m_cpu_temp_tip_edit.GetValue();
-    checkTipValue(m_data.cpu_temp_tip.tip_value);
+    checkTempTipValue(m_data.cpu_temp_tip.tip_value);
 
     m_data.gpu_temp_tip.tip_value = m_gpu_temp_tip_edit.GetValue();
-    checkTipValue(m_data.gpu_temp_tip.tip_value);
+    checkTempTipValue(m_data.gpu_temp_tip.tip_value);
 
     m_data.hdd_temp_tip.tip_value = m_hdd_temp_tip_edit.GetValue();
-    checkTipValue(m_data.hdd_temp_tip.tip_value);
+    checkTempTipValue(m_data.hdd_temp_tip.tip_value);
 
     m_data.mainboard_temp_tip.tip_value = m_mbd_temp_tip_edit.GetValue();
-    checkTipValue(m_data.mainboard_temp_tip.tip_value);
+    checkTempTipValue(m_data.mainboard_temp_tip.tip_value);
 
     //获取语言的设置
     m_data.language = static_cast<Language>(m_language_combo.GetCurSel());
@@ -401,8 +433,6 @@ void CGeneralSettingsDlg::OnOK()
     {
         MessageBox(CCommon::LoadText(IDS_CFG_DIR_CHANGED_INFO), NULL, MB_ICONINFORMATION | MB_OK);
     }
-
-    m_data.monitor_time_span = m_monitor_span_edit.GetValue();
 
     //m_taskbar_item_modified = (theApp.m_taskbar_data.m_tbar_display_item != taskbar_displat_item_ori);
 
@@ -452,15 +482,18 @@ BOOL CGeneralSettingsDlg::PreTranslateMessage(MSG* pMsg)
 
 void CGeneralSettingsDlg::OnBnClickedUseCpuTimeRadio()
 {
-    // TODO: 在此添加控件通知处理程序代码
-    m_data.m_get_cpu_usage_by_cpu_times = true;
+    m_data.cpu_usage_acquire_method = GeneralSettingData::CA_CPU_TIME;
 }
 
 
 void CGeneralSettingsDlg::OnBnClickedUsePdhRadio()
 {
-    // TODO: 在此添加控件通知处理程序代码
-    m_data.m_get_cpu_usage_by_cpu_times = false;
+    m_data.cpu_usage_acquire_method = GeneralSettingData::CA_PDH;
+}
+
+void CGeneralSettingsDlg::OnBnClickedUseHardwareMonitorRadio()
+{
+    m_data.cpu_usage_acquire_method = GeneralSettingData::CA_HARDWARE_MONITOR;
 }
 
 void CGeneralSettingsDlg::OnDeltaposSpin(NMHDR* pNMHDR, LRESULT* pResult)
@@ -608,6 +641,7 @@ void CGeneralSettingsDlg::OnBnClickedCpuCheck()
         CheckDlgButton(IDC_CPU_CHECK, FALSE);
     }
     m_data.SetHardwareEnable(HI_CPU, checked);
+    EnableDlgCtrl(IDC_USE_HARDWARE_MONITOR_RADIO, checked);
 }
 
 
@@ -702,4 +736,10 @@ void CGeneralSettingsDlg::OnBnClickedResetAutoRunButton()
     CheckDlgButton(IDC_AUTO_RUN_CHECK, auto_run);
     //更新鼠标提示
     AddOrUpdateAutoRunTooltip(false);
+}
+
+
+void CGeneralSettingsDlg::OnEnChangeMonitorSpanEdit()
+{
+    m_data.monitor_time_span = m_monitor_span_edit.GetValue();
 }

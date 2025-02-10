@@ -3,6 +3,7 @@
 #include "Common.h"
 #include "CalendarHelper.h"
 #include "TrafficMonitor.h"
+#include "WindowsSettingHelper.h"
 
 ///////////////////////////////////////////////////////////////////////////////////
 int Date::week() const
@@ -66,18 +67,20 @@ const std::map<CommonDisplayItem, wstring>& DispStrings::GetAllItems() const
 
 void DispStrings::operator=(const DispStrings& disp_str)
 {
-    map_str = disp_str.map_str;
+    std::map<CommonDisplayItem, wstring> tmp = disp_str.map_str;
     //如果赋值的字符串是定义的无效字符串，则不赋值
-    for (auto& iter = map_str.begin(); iter != map_str.end(); ++iter)
+    for (auto iter = tmp.begin(); iter != tmp.end(); ++iter)
     {
         if (iter->second == NONE_STR)
-            iter->second.clear();
+            iter->second = map_str[iter->first];
     }
+
+    map_str = tmp;
 }
 
 bool DispStrings::IsInvalid() const
 {
-    for (auto& iter = map_str.begin(); iter != map_str.end(); ++iter)
+    for (auto iter = map_str.begin(); iter != map_str.end(); ++iter)
     {
         if (iter->second == NONE_STR)
             return true;
@@ -153,12 +156,70 @@ std::set<std::wstring>& StringSet::data()
     return string_set;
 }
 
+bool TaskBarSettingData::IsTaskbarTransparent() const
+{
+    if (CWindowsSettingHelper::IsWindows10LightTheme() || theApp.m_win_version.IsWindows8Or8point1() || theApp.m_is_windows11_taskbar)
+        return (transparent_color == back_color);
+    else
+        return transparent_color == 0;
+}
+
+void TaskBarSettingData::SetTaskabrTransparent(bool transparent)
+{
+    if (transparent)
+    {
+        if (CWindowsSettingHelper::IsWindows10LightTheme() || theApp.m_win_version.IsWindows8Or8point1() || theApp.m_is_windows11_taskbar)
+        {
+            //浅色模式下要设置任务栏窗口透明，只需将透明色设置成和背景色一样即可
+            CCommon::TransparentColorConvert(back_color);
+            transparent_color = back_color;
+        }
+        else
+        {
+            //深色模式下，背景色透明将透明色设置成黑色
+            transparent_color = 0;
+        }
+    }
+    else
+    {
+        //要设置任务栏窗口不透明，只需将透明色设置成和背景色不一样即可
+        if (back_color != TASKBAR_TRANSPARENT_COLOR1)
+            transparent_color = TASKBAR_TRANSPARENT_COLOR1;
+        else
+            transparent_color = TASKBAR_TRANSPARENT_COLOR2;
+    }
+}
+
 void TaskBarSettingData::ValidItemSpace()
 {
     if (item_space < 0)
         item_space = 0;
     if (item_space > 32)
         item_space = 32;
+}
+
+void TaskBarSettingData::ValidVerticalMargin()
+{
+    if (vertical_margin < -10)
+        vertical_margin = -10;
+    if (vertical_margin > 10)
+        vertical_margin = 10;
+}
+
+void TaskBarSettingData::ValidWindowOffsetTop()
+{
+    if (window_offset_top < -20)
+        window_offset_top = -20;
+    if (window_offset_top > 20)
+        window_offset_top = 20;
+}
+
+void TaskBarSettingData::ValidWindowOffsetLeft()
+{
+    if (window_offset_left < -800)
+        window_offset_top = -800;
+    if (window_offset_top > 800)
+        window_offset_top = 800;
 }
 
 unsigned __int64 TaskBarSettingData::GetNetspeedFigureMaxValueInBytes() const

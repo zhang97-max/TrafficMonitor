@@ -59,6 +59,7 @@ protected:
     void SetControlEnable();
 
     virtual void SetControlMouseWheelEnable(bool enable) override;
+    virtual void OnSettingsApplied() override;
 
     //显示开启硬件监控时的提示，如果用户选择了“是”则返回true，否则返回false
     //“以后不再显示该对话框”的标记保存在注册表“\HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\DontShowMeThisDialogAgain”
@@ -83,6 +84,7 @@ public:
     virtual BOOL PreTranslateMessage(MSG* pMsg);
     afx_msg void OnBnClickedUseCpuTimeRadio();
     afx_msg void OnBnClickedUsePdhRadio();
+    afx_msg void OnBnClickedUseHardwareMonitorRadio();
     afx_msg void OnDeltaposSpin(NMHDR* pNMHDR, LRESULT* pResult);
     afx_msg void OnEnKillfocusMonitorSpanEdit();
     afx_msg void OnBnClickedCpuTempTipCheck();
@@ -103,4 +105,5 @@ public:
     afx_msg void OnBnClickedShowNotifyIconCheck();
     afx_msg void OnBnClickedSelectConnectionsButton();
     afx_msg void OnBnClickedResetAutoRunButton();
+    afx_msg void OnEnChangeMonitorSpanEdit();
 };

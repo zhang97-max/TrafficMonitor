@@ -22,7 +22,6 @@
 #include "AboutDlg.h"
 #include "CPUUsage.h"
 #include "HistoryTrafficFile.h"
-#include "HighResolutionTimer.h"
 
 // CTrafficMonitorDlg 对话框
 class CTrafficMonitorDlg : public CDialog
@@ -31,6 +30,9 @@ class CTrafficMonitorDlg : public CDialog
 public:
     CTrafficMonitorDlg(CWnd* pParent = NULL);   // 标准构造函数
     ~CTrafficMonitorDlg();
+    CTaskBarDlg* GetTaskbarWindow() const;
+
+    static CTrafficMonitorDlg* Instance();
 
     // 对话框数据
 #ifdef AFX_DESIGN_TIME
@@ -56,7 +58,8 @@ protected:
     unsigned __int64 m_last_in_bytes{}; //上次已接收的字节数
     unsigned __int64 m_last_out_bytes{};    //上次已发送的字节数
 
-    CCPUUsage m_cpu_usage;
+    CCPUUsage m_cpu_usage_helper;
+    CCpuFreq m_cpu_freq_helper;
 
     bool m_first_start{ true };     //初始时为true，在定时器第一次启动后置为flase
 
@@ -117,15 +120,21 @@ protected:
 
     string m_connection_name_preferd{ theApp.m_cfg_data.m_connection_name };          //保存用户手动选择的网络连接名称
 
-    //CHighResolutionTimer m_timer;           // 采用多媒体定时器(也防止了界面阻塞出现的卡顿现象)
-    CCriticalSection m_critical;
-    static UINT MonitorThreadCallback(LPVOID dwUser);
-    bool m_is_monitor_thread_runing{ false };
+    void DoMonitorAcquisition();    //获取一次监控信息
+    static UINT MonitorThreadCallback(LPVOID dwUser);   //获取监控信息的线程函数
+    bool m_monitor_data_required{ false };          //线程中需要获取监控数据标志，当需要获取监控数据时置为true，获取到一次监控数据时置为false
+    bool m_is_thread_exit{ false }; //线程退出标志
+    CEvent m_threadExitEvent;       //用于通知主线程工作线程已退出
+public:
+    void ExitMonitorThread();       //停止监控线程
 
+protected:
     CString GetMouseTipsInfo();     //获取鼠标提示信息
     void SetTransparency();         //根据m_transparency的值设置窗口透明度
     void SetTransparency(int transparency);
+public:
     void SetAlwaysOnTop();          //根据m_always_on_top的值设置窗口置顶
+protected:
     void SetMousePenetrate();       //根据m_mouse_penetrate的值设置是否鼠标穿透
     POINT CalculateWindowMoveOffset(CRect rect, bool screen_changed);  //计算当窗口处于屏幕区域外时，移动到屏幕区域需要移动的位置
     void CheckWindowPos(bool screen_changed = false);          //测试窗口的位置，如窗口的位置在屏幕外，则移动窗口使其全部都在屏幕内，并返回新位置
@@ -171,6 +180,11 @@ protected:
 
     //判断一个点在哪个显示项目的区域内，并保存到m_clicked_item
     void CheckClickedItem(CPoint point);
+
+    int FindSkinIndex(const wstring& skin_name);
+
+    //应用一个皮肤
+    void ApplySkin(int skin_index);
 
 public:
     //void ApplySettings();

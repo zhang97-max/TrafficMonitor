@@ -50,6 +50,7 @@ protected:
     CButton m_auto_set_back_color_chk;
     CComboBox2 m_memory_display_combo;
     CSpinEdit m_item_space_edit;
+    CSpinEdit m_vertical_margin_edit;
     CSpinEdit m_net_speed_figure_max_val_edit;
     CComboBox2 m_net_speed_figure_max_val_unit_combo;
 
@@ -66,9 +67,6 @@ public:
 
 protected:
     void EnableControl();
-
-    void SetTaskabrTransparent(bool transparent);
-    bool IsTaskbarTransparent();
     virtual void SetControlMouseWheelEnable(bool enable) override;
 
     virtual void DoDataExchange(CDataExchange* pDX);    // DDX/DDV 支持
@@ -109,10 +107,15 @@ public:
     afx_msg void OnCbnSelchangeMemoryDisplayCombo();
     afx_msg void OnBnClickedShowDashedBox();
     afx_msg void OnBnClickedSetOrderButton();
-    afx_msg void OnBnClickedTaskbarWndSnapCheck();
     afx_msg void OnEnChangeItemSpaceEdit();
+    afx_msg void OnEnChangeVerticalMarginEdit();
     virtual BOOL OnCommand(WPARAM wParam, LPARAM lParam);
     afx_msg void OnBnClickedShowNetSpeedFigureCheck();
     afx_msg void OnCbnSelchangeNetSpeedFigureMaxValueUnitCombo();
     afx_msg void OnEnChangeNetSpeedFigureMaxValueEdit();
+    afx_msg void OnBnClickedGdiRadio();
+    afx_msg void OnBnClickedD2dRadio();
+    afx_msg void OnBnClickedEnableColorEmojiCheck();
+    afx_msg void OnCbnSelchangeDigitNumberCombo();
+    afx_msg void OnBnClickedWin11SettingsButton();
 };
